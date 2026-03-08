@@ -251,12 +251,92 @@ def autobuy_worker(chat_id, api_key, country_key):
     if st_msg: bot.edit_message_text(f"🛑 *AUTO BUY SELESAI*\nTotal: {len(orders_list)}", chat_id, st_msg.message_id)
 
 # =============================================
+# WHITELIST MANAGEMENT
+# =============================================
+def add_to_whitelist(user_id, added_by):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT OR IGNORE INTO whitelist (user_id, added_by) VALUES (?, ?)", (user_id, added_by))
+    conn.commit()
+    conn.close()
+
+def remove_from_whitelist(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM whitelist WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def get_all_whitelisted():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT user_id, added_at FROM whitelist")
+    res = c.fetchall()
+    conn.close()
+    return res
+
+# =============================================
+# ADMIN COMMANDS
+# =============================================
+@bot.message_handler(commands=['adduser'])
+def adduser_cmd(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "🚫 Hanya admin.")
+        return
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        bot.reply_to(message, "❌ Format: `/adduser USER_ID`", parse_mode="Markdown")
+        return
+    try:
+        target_id = int(parts[1].strip())
+    except ValueError:
+        bot.reply_to(message, "❌ User ID harus angka.")
+        return
+    add_to_whitelist(target_id, message.from_user.id)
+    bot.reply_to(message, f"✅ User `{target_id}` ditambahkan ke whitelist.", parse_mode="Markdown")
+
+@bot.message_handler(commands=['removeuser'])
+def removeuser_cmd(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "🚫 Hanya admin.")
+        return
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        bot.reply_to(message, "❌ Format: `/removeuser USER_ID`", parse_mode="Markdown")
+        return
+    try:
+        target_id = int(parts[1].strip())
+    except ValueError:
+        bot.reply_to(message, "❌ User ID harus angka.")
+        return
+    if target_id == ADMIN_ID:
+        bot.reply_to(message, "⚠️ Tidak bisa hapus admin.")
+        return
+    remove_from_whitelist(target_id)
+    bot.reply_to(message, f"✅ User `{target_id}` dihapus dari whitelist.", parse_mode="Markdown")
+
+@bot.message_handler(commands=['listusers'])
+def listusers_cmd(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "🚫 Hanya admin.")
+        return
+    users = get_all_whitelisted()
+    if not users:
+        bot.reply_to(message, "📋 Whitelist kosong.")
+        return
+    lines = ["📋 *Daftar Whitelist:*\n"]
+    for uid, added_at in users:
+        role = "👑 ADMIN" if uid == ADMIN_ID else "👤 User"
+        lines.append(f"{role}: `{uid}` | Ditambahkan: {added_at}")
+    bot.reply_to(message, "\n".join(lines), parse_mode="Markdown")
+
+# =============================================
 # HANDLERS
 # =============================================
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = message.from_user.id
-    if not is_whitelisted(uid): bot.send_message(message.chat.id, "🔒 Whitelist Required."); return
+    if not is_whitelisted(uid): bot.send_message(message.chat.id, f"🔒 *Akses Ditolak*\nID Anda: `{uid}`\nHubungi admin untuk akses.", parse_mode="Markdown"); return
     key = get_user_api(uid)
     text = "🐻 *Bot OTP WhatsApp (Hero-SMS)* \n\nPilih negara di bawah:\n\n"
     if key:

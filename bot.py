@@ -37,7 +37,7 @@ API_BASE = "https://hero-sms.com/stubs/handler_api.php"
 # =============================================
 COUNTRIES = {
     "vietnam": {"name": "Vietnam", "flag": "🇻🇳", "country_id": "10", "country_code": "84"},
-    "philipina": {"name": "Philipina", "flag": "🇵🇭", "country_id": "3", "country_code": "63", "maxPrice": "0.24"},
+    "philipina": {"name": "Philipina", "flag": "🇵🇭", "country_id": "3", "country_code": "63", "maxPrice": "0.24", "minPrice": 0.15},
     "colombia": {"name": "Colombia", "flag": "🇨🇴", "country_id": "33", "country_code": "57"},
 }
 
@@ -98,6 +98,24 @@ def req_api(api_key, action, **kwargs):
         r = requests.get(API_BASE, params=params, timeout=12)
         return r.text.strip()
     except Exception as e: return f"ERROR: {str(e)}"
+
+def fetch_price(api_key, country_key):
+    """Ambil harga nomor dari API"""
+    try:
+        cid = COUNTRIES[country_key]['country_id']
+        res_p = req_api(api_key, 'getPrices', service=SERVICE, country=cid)
+        if res_p.startswith("{"):
+            d = json.loads(res_p)
+            inn = d.get(cid, {}).get(SERVICE) or d.get(SERVICE, {}).get(cid)
+            if inn:
+                if 'cost' in inn:
+                    return float(inn['cost'])
+                numeric_keys = [float(k) for k in inn.keys() if k.replace('.','').isdigit()]
+                if numeric_keys:
+                    return min(numeric_keys)
+    except:
+        pass
+    return None
 
 def strip_country_code(number, country_code="84"):
     number = str(number).strip()
@@ -211,17 +229,16 @@ def autobuy_worker(chat_id, api_key, country_key):
             kwargs['maxPrice'] = COUNTRIES[country_key]['maxPrice']
         res = req_api(api_key, 'getNumber', **kwargs)
         if 'ACCESS_NUMBER' in res:
-            p = res.split(':'); count += 1
-            # price
-            pr = None
-            try:
-                res_p = req_api(api_key, 'getPrices', service=SERVICE, country=COUNTRIES[country_key]['country_id'])
-                if res_p.startswith("{"):
-                    d = json.loads(res_p); cid = COUNTRIES[country_key]['country_id']
-                    inn = d.get(cid, {}).get(SERVICE) or d.get(SERVICE, {}).get(cid)
-                    if inn: pr = inn.get('cost') or min([float(k) for k in inn.keys() if k.replace('.','').isdigit()])
-            except: pass
-            o = {'id': p[1], 'number': p[2], 'status': 'waiting', 'order_time': time.time(), 'price': pr}
+            p = res.split(':'); act_id = p[1]; number = p[2]
+            # Cek harga — jika di bawah minPrice, cancel dan skip
+            pr = fetch_price(api_key, country_key)
+            min_pr = COUNTRIES[country_key].get('minPrice')
+            if min_pr and pr and pr < min_pr:
+                req_api(api_key, 'setStatus', status='8', id=act_id)
+                time.sleep(0.3)
+                continue
+            count += 1
+            o = {'id': act_id, 'number': number, 'status': 'waiting', 'order_time': time.time(), 'price': pr}
             orders_list.append(o)
             try:
                 m = bot.send_message(chat_id, format_order_message([o], "", country_key, count, False), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("⏳ Wait...", callback_data="cancel_wait")))
@@ -276,15 +293,29 @@ def callback_q(call):
 def process_bulk(cid, api, count, country_key):
     cntry = COUNTRIES[country_key]; msg = bot.send_message(cid, f"⏳ Pesan {count} nomor...")
     orders = []
-    # (Simplified price fetch for speed)
-    pr = None
-    for _ in range(count):
+    min_pr = cntry.get('minPrice')
+    max_retries = count * 3  # Batas retry agar tidak infinite loop
+    attempts = 0
+    while len(orders) < count and attempts < max_retries:
+        attempts += 1
         kwargs = {'service': SERVICE, 'country': cntry['country_id']}
         if 'maxPrice' in cntry:
             kwargs['maxPrice'] = cntry['maxPrice']
         res = req_api(api, 'getNumber', **kwargs)
         if 'ACCESS_NUMBER' in res:
-            p = res.split(':'); orders.append({'id':p[1], 'number':p[2], 'status':'waiting', 'order_time':time.time(), 'price':pr})
+            p = res.split(':'); act_id = p[1]; number = p[2]
+            pr = fetch_price(api, country_key)
+            # Filter harga minimum
+            if min_pr and pr and pr < min_pr:
+                req_api(api, 'setStatus', status='8', id=act_id)
+                time.sleep(0.3)
+                continue
+            orders.append({'id': act_id, 'number': number, 'status':'waiting', 'order_time':time.time(), 'price': pr})
+        elif res == 'NO_BALANCE':
+            break
+        elif res == 'NO_NUMBERS':
+            if not orders and attempts >= 3:
+                break
         time.sleep(0.5)
     if orders:
         bot.edit_message_text(format_order_message(orders, f"🛒 *Order {cntry['name']}*", country_key), cid, msg.message_id, parse_mode="Markdown")

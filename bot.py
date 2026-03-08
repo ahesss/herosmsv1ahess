@@ -14,8 +14,16 @@ import time
 TOKEN = os.environ.get("BOT_TOKEN", "8766843422:AAGt3yP_3fwOO0Y-w7066-N-p0LRy8iqZKU")
 bot = telebot.TeleBot(TOKEN)
 
-API_BASE = "https://hero-sms.com/stubs/handler_api.php"
-DB_PATH = os.environ.get("DB_PATH", "database.db")
+# =============================================
+# KONFIGURASI PERSISTENCE (RAILWAY VOLUME)
+# =============================================
+VOL_PATH = "/data"
+DEFAULT_DB = "database.db"
+# Jika folder /data (Volume Railway) ada, gunakan otomatis
+if os.path.exists(VOL_PATH) and os.path.isdir(VOL_PATH):
+    DEFAULT_DB = os.path.join(VOL_PATH, "database.db")
+
+DB_PATH = os.environ.get("DB_PATH", DEFAULT_DB)
 ADMIN_ID = 940475417
 MAX_ORDER = 20         
 OTP_TIMEOUT = 1200     # 20 Menit
@@ -50,12 +58,19 @@ def init_db():
     conn.close()
 
 def is_whitelisted(user_id):
+    # Cek Environment Variable (Diberi prioritas agar tidak terhapus)
+    env_wl = os.environ.get("WHITELIST_IDS", "")
+    perm_wl = [int(x.strip()) for x in env_wl.split(",") if x.strip().replace('-', '').isdigit()]
+    if user_id == ADMIN_ID or user_id in perm_wl:
+        return True
+        
+    # Cek Database
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT user_id FROM whitelist WHERE user_id = ?", (user_id,))
     res = c.fetchone()
     conn.close()
-    return res is not None or user_id == ADMIN_ID
+    return res is not None
 
 def set_user_api(user_id, api_key):
     conn = sqlite3.connect(DB_PATH)

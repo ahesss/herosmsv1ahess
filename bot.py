@@ -8,18 +8,14 @@ import threading
 import time
 
 # =============================================
-# KONFIGURASI
+# KONFIGURASI (SAMA PERSIS GRIZZLY)
 # =============================================
-# Token dari USER
 TOKEN = os.environ.get("BOT_TOKEN", "8766843422:AAGt3yP_3fwOO0Y-w7066-N-p0LRy8iqZKU")
 bot = telebot.TeleBot(TOKEN)
 
-# API Hero-SMS
+# API Hero-SMS (Dikasih tau user ambil API dari herosms tapi fitur Grizzly)
 API_BASE = "https://hero-sms.com/stubs/handler_api.php"
 DB_PATH = os.environ.get("DB_PATH", "database.db")
-
-# PORTAL CALLBACK (Ambil dari ahessherosms)
-AUTH_PORTAL_URL = os.environ.get("AUTH_PORTAL_URL", "https://otp-hero-callback.up.railway.app")
 
 # ADMIN
 ADMIN_ID = 940475417
@@ -30,8 +26,12 @@ CHECK_INTERVAL = 3
 CANCEL_DELAY = 120     
 SERVICE = "wa"         
 
+# ENV BASED PERMANENT WHITELIST (SAMA PERSIS GRIZZLY)
+env_whitelist = os.environ.get("WHITELIST_IDS", "")
+PERMANENT_WHITELIST = [int(x.strip()) for x in env_whitelist.split(",") if x.strip().replace('-', '').isdigit()]
+
 # =============================================
-# KONFIGURASI NEGARA (Ditambah Philipina ID 4)
+# KONFIGURASI NEGARA (Philipina ID 4 Ditambah)
 # =============================================
 COUNTRIES = {
     "vietnam": {
@@ -61,7 +61,7 @@ active_orders = {}
 autobuy_active = {}
 
 # =============================================
-# DATABASE logic
+# DATABASE (CLONE GRIZZLY)
 # =============================================
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -79,19 +79,13 @@ def init_db():
     conn.close()
 
 def is_whitelisted(user_id):
-    if user_id == ADMIN_ID: return True
+    if user_id == ADMIN_ID or user_id in PERMANENT_WHITELIST: return True
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT user_id FROM whitelist WHERE user_id = ?", (user_id,))
     res = c.fetchone()
     conn.close()
     return res is not None
-
-def send_login_prompt(chat_id):
-    markup = InlineKeyboardMarkup()
-    markup.row(InlineKeyboardButton("🔐 Login via Portal", url=AUTH_PORTAL_URL))
-    text = "🔒 *Akses Ditolak*\n\nSilakan login via portal untuk verifikasi ID Anda."
-    bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=markup)
 
 def get_user_api(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -109,7 +103,7 @@ def set_user_api(user_id, api_key):
     conn.close()
 
 # =============================================
-# API HANDLER
+# API HANDLER (TEMBAK HERO-SMS)
 # =============================================
 def req_api(api_key, action, **kwargs):
     params = {'api_key': api_key, 'action': action}
@@ -141,7 +135,7 @@ def strip_country_code(number, country_code="84"):
     return number
 
 # =============================================
-# FORMAT PESAN (GRIZZLY STYLE)
+# FORMAT PESAN (GRIZZLY STYLE - BRUTAL)
 # =============================================
 def format_order_message(orders, title="", country_key="vietnam", start_index=1):
     country = COUNTRIES.get(country_key, COUNTRIES["vietnam"])
@@ -232,16 +226,16 @@ def autobuy_worker(cid, api_key):
         time.sleep(0.5)
 
 # =============================================
-# HANDLERS
+# HANDLERS (PERSIS GRIZZLY)
 # =============================================
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = message.from_user.id
     if not is_whitelisted(uid):
-        send_login_prompt(message.chat.id)
+        bot.send_message(message.chat.id, f"🔒 *Akses Ditolak*\nID Anda: `{uid}`", parse_mode="Markdown")
         return
     api_key = get_user_api(uid)
-    text = "🐻 *OTP Hero (Hero-SMS)*\n\nStatus API: " + ("✅ Aktif" if api_key else "❌ Belum Set")
+    text = "🐻 *OTP Hero (Hero-SMS)*\n\nKetik `/setapi API_KEY` untuk daftar."
     if api_key:
         bal = req_api(api_key, 'getBalance').split(':')
         if len(bal) > 1: text += f"\n💰 Saldo: *{bal[1]} USD*"
@@ -261,6 +255,18 @@ def setapi(message):
             set_user_api(message.from_user.id, p[1])
             bot.reply_to(message, "✅ API Saved.")
 
+@bot.message_handler(commands=['adduser'])
+def adduser(message):
+    if message.from_user.id != ADMIN_ID: return
+    p = message.text.split()
+    if len(p) > 1:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO whitelist (user_id, added_by) VALUES (?, ?)", (int(p[1]), ADMIN_ID))
+        conn.commit()
+        conn.close()
+        bot.reply_to(message, "✅ Whitelisted.")
+
 @bot.callback_query_handler(func=lambda call: True)
 def calls(call):
     if not is_whitelisted(call.from_user.id): return
@@ -268,13 +274,13 @@ def calls(call):
     if call.data.startswith("country_"):
         c = call.data.split("_")[1]
         m = InlineKeyboardMarkup()
-        for i in range(1, 6): m.add(InlineKeyboardButton(str(i), callback_data=f"buy_{c}_{i}"))
-        bot.edit_message_text(f"Quantity {c}:", call.message.chat.id, call.message.message_id, reply_markup=m)
+        m.row(*[InlineKeyboardButton(str(i), callback_data=f"buy_{c}_{i}") for i in range(1,6)])
+        bot.edit_message_text(f"Pilih jumlah {c}:", call.message.chat.id, call.message.message_id, reply_markup=m)
     elif call.data.startswith("buy_"):
         p = call.data.split("_")
         process_bulk(call.message.chat.id, api, int(p[2]), p[1])
     elif call.data == "nav_balance":
-        bot.answer_callback_query(call.id, f"Saldo: {req_api(api,'getBalance').split(':')[1]} USD", show_alert=True)
+        bot.reply_to(call.message, f"Saldo: {req_api(api,'getBalance').split(':')[1]} USD")
     elif call.data == "nav_autobuy":
         autobuy_active[call.message.chat.id] = True
         threading.Thread(target=autobuy_worker, args=(call.message.chat.id, api)).start()
@@ -302,4 +308,5 @@ def process_bulk(cid, api, count, country_key):
 
 if __name__ == '__main__':
     init_db()
+    print("Bot Hero-SMS Style Grizzly Running...")
     bot.infinity_polling()

@@ -1,5 +1,5 @@
 import telebot
-# Trigger redeploy - Cloned from Grizzly 100% Correct Version
+# Trigger redeploy - SUPER SUPER SUPER BRUTAL VERSION 🚀💥
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 import sqlite3
@@ -118,14 +118,6 @@ def update_user_info(user):
               (user.id, user.first_name, user.last_name or '', user.username or ''))
     conn.commit()
     conn.close()
-
-def get_user_info(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT first_name, last_name, username, last_seen FROM user_info WHERE user_id = ?", (user_id,))
-    res = c.fetchone()
-    conn.close()
-    return res
 
 def log_activity(user_id, action, detail=""):
     conn = sqlite3.connect(DB_PATH)
@@ -286,17 +278,17 @@ def auto_check_otp(chat_id, message_id, orders, api_key, country_key="vietnam", 
         time.sleep(CHECK_INTERVAL)
 
 # =============================================
-# AUTO-BUY (BRUTAL CLONE 1:1 FROM GRIZZLY)
+# AUTO-BUY (SUPER SUPER SUPER BRUTAL VERSION)
 # =============================================
 def autobuy_worker(chat_id, api_key, country_key):
     country = COUNTRIES[country_key]
     try:
         status_msg = bot.send_message(
             chat_id, 
-            f"🔥 *AUTO BUY {country['name'].upper()} AKTIF (BRUTAL MODE)*\n\n"
-            "Mencari nomor nonstop sampai saldo habis...\n"
+            f"🚀 *SUPER BRUTAL AUTO BUY {country['name'].upper()} AKTIF*\n\n"
+            "Mencari nomor nonstop tanpa jeda...\n"
             "Ketik /stopauto untuk berhenti.\n\n"
-            "⏳ *Status:* Memulai pencarian...", 
+            "⚡ *Status:* Mode Brutal ON!", 
             parse_mode="Markdown"
         )
     except: status_msg = None
@@ -307,31 +299,32 @@ def autobuy_worker(chat_id, api_key, country_key):
     while autobuy_active.get(chat_id) == country_key:
         attempts += 1
         now = time.time()
-        # LIVE UI UPDATE EVERY 7 SECONDS (PERSIS GRIZZLY)
-        if status_msg and (now - last_ui_update > 7):
+        
+        # UI UPDATE (LEBIH JARANG AGAR LOOP TIDAK TERHAMBAT)
+        if status_msg and (now - last_ui_update > 10):
             el_m = int((now - start_time) // 60); el_s = int((now - start_time) % 60)
-            target_count = len(orders_list)
             try:
                 bot.edit_message_text(
-                    f"🔥 *AUTO BUY {country['name'].upper()} AKTIF (BRUTAL MODE)*\n\n"
-                    f"Mencari nomor nonstop sampai saldo habis...\n"
-                    f"Ketik /stopauto untuk berhenti.\n\n"
-                    f"🔄 *Status:* Sedang mencari...\n"
-                    f"📈 *Percobaan API:* {attempts}x\n"
-                    f"⏱ *Waktu berjalan:* {el_m}m {el_s}s\n"
-                    f"🎯 *Target didapat:* {target_count} nomor",
+                    f"🚀 *SUPER BRUTAL AUTO BUY {country['name'].upper()}*\n\n"
+                    f"🔄 *Percobaan API:* `{attempts}`x\n"
+                    f"🎯 *Total didapat:* `{len(orders_list)}` nomor\n"
+                    f"⏱ *Waktu berjalan:* {el_m}m {el_s}s\n\n"
+                    "🔥 *MODE:* Super Brutal (No Sleep)",
                     chat_id, status_msg.message_id, parse_mode="Markdown"
                 )
                 last_ui_update = now
             except: pass
 
+        # REQUEST API TANPA JEDA SEBELUMNYA
         res = req_api(api_key, 'getNumber', service=SERVICE, country=country['country_id'])
+        
         if 'ACCESS_NUMBER' in res:
             parts = res.split(':')
             if len(parts) >= 3:
                 t_id, number = parts[1], parts[2]
                 order_counter += 1
-                # Fetch Price
+                
+                # Fetch Price (Tanpa Blocking yg Lama)
                 price_val = None
                 try:
                     res_p = req_api(api_key, 'getPrices', service=SERVICE, country=str(country['country_id']))
@@ -345,7 +338,7 @@ def autobuy_worker(chat_id, api_key, country_key):
                 order = {'id': t_id, 'number': number, 'status': 'waiting', 'order_time': time.time(), 'country_key': country_key, 'price': price_val}
                 orders_list.append(order)
                 
-                # Kirim Pesan Terpisah (Separate Bubble)
+                # Kirim Pesan Terpisah
                 text = format_order_message([order], "", country_key, start_index=order_counter, show_progress=False)
                 markup = InlineKeyboardMarkup().row(InlineKeyboardButton("⏳ Cancel nanti", callback_data="cancel_wait"))
                 try:
@@ -355,24 +348,31 @@ def autobuy_worker(chat_id, api_key, country_key):
                     threading.Thread(target=auto_check_otp, args=(chat_id, msg.message_id, [order], api_key, country_key, True, order_counter)).start()
                 except: pass
                 
-                # Update status log utama
+                # Update status log utama (Sekali dapet, update UI)
                 if status_msg:
                     try:
                         bot.edit_message_text(
-                            f"🔥 *AUTO BUY {country['name'].upper()} AKTIF (BRUTAL MODE)*\n\n"
-                            f"✅ *Target {order_counter} Didapat! Lanjut cari...*\n"
+                            f"🚀 *SUPER BRUTAL AUTO BUY {country['name'].upper()}*\n\n"
+                            f"✅ *Target {order_counter} Didapat!*\n"
                             f"📈 *Total percobaan:* {attempts}x\n"
                             f"🎯 *Total didapat:* {len(orders_list)} nomor",
                             chat_id, status_msg.message_id, parse_mode="Markdown"
                         )
                     except: pass
-                time.sleep(1) 
+                # Jeda minimal 0.5 detik HANYA JIKA dapet nomor agar tidak di-ban service
+                time.sleep(0.5) 
         elif res == 'NO_BALANCE':
             bot.send_message(chat_id, "❌ *SALDO HABIS!* Auto buy berhenti.", parse_mode="Markdown")
             autobuy_active[chat_id] = False; break
-        elif res == 'NO_NUMBERS': time.sleep(0.1) # Brutal retry
-        else: time.sleep(0.2)
-        time.sleep(0.5)
+        elif res == 'NO_NUMBERS': 
+            # SUPER BRUTAL: NO SLEEP AT ALL OR VERY MINIMAL
+            pass 
+        else: 
+            # API ERROR/BUSY: JEDA SANGAT SINGKAT
+            time.sleep(0.05)
+        
+        # JEDA GLOBAL DIHAPUS ATAU DIBUAT MINIMALIS BANGET
+        # time.sleep(0) # Ini akan membuat CPU 100%, jadi kita biarkan loop berjalan secepat mungkin
 
     if status_msg:
         try: bot.edit_message_text(f"🛑 *AUTO BUY DIHENTIKAN*\nSelesai dengan {len(orders_list)} nomor.", chat_id, status_msg.message_id, parse_mode="Markdown")
@@ -397,7 +397,8 @@ def start_cmd(message):
     if api_key:
         markup.row(InlineKeyboardButton("🇻🇳 Vietnam", callback_data="country_vietnam"), InlineKeyboardButton("🇵🇭 Philipina", callback_data="country_philipina"), InlineKeyboardButton("🇨🇴 Colombia", callback_data="country_colombia"))
         markup.row(InlineKeyboardButton("🛒 Order Baru", callback_data="nav_order"), InlineKeyboardButton("💰 Saldo", callback_data="nav_balance"))
-        markup.row(InlineKeyboardButton("🔥 Auto Buy", callback_data="nav_autobuy"), InlineKeyboardButton("🛑 Stop Auto", callback_data="nav_stopauto"))
+        markup.row(InlineKeyboardButton("🚀 AUTO BUY SUPER BRUTAL", callback_data="nav_autobuy"))
+        markup.row(InlineKeyboardButton("🛑 Stop Auto", callback_data="nav_stopauto"))
     bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
 
 @bot.message_handler(commands=['setapi'])
@@ -427,11 +428,11 @@ def callback_q(call):
     elif data == "nav_autobuy":
         m = InlineKeyboardMarkup()
         m.row(InlineKeyboardButton("🇻🇳 VN", callback_data="auto_vietnam"), InlineKeyboardButton("🇵🇭 PH", callback_data="auto_philipina"), InlineKeyboardButton("🇨🇴 CO", callback_data="auto_colombia"))
-        bot.edit_message_text("🔥 *Pilih negara Auto Buy:*", cid, mid, parse_mode="Markdown", reply_markup=m)
+        bot.edit_message_text("🚀 *Pilih negara untuk SUPER BRUTAL AUTO BUY:*", cid, mid, parse_mode="Markdown", reply_markup=m)
     elif data.startswith("auto_"):
         ck = data.split("_")[1]; autobuy_active[cid] = ck
         threading.Thread(target=autobuy_worker, args=(cid, api, ck)).start()
-        bot.answer_callback_query(call.id, f"🚀 {ck.upper()} Brutal Start!")
+        bot.answer_callback_query(call.id, f"⚡ {ck.upper()} SUPER BRUTAL AKTIF!")
     elif data == "nav_stopauto" or data == "nav_stop":
         autobuy_active[cid] = False; bot.answer_callback_query(call.id, "🛑 Stop.")
     elif data.startswith("cancelall_"):

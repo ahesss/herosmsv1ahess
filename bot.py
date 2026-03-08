@@ -37,7 +37,7 @@ API_BASE = "https://hero-sms.com/stubs/handler_api.php"
 # =============================================
 COUNTRIES = {
     "vietnam": {"name": "Vietnam", "flag": "🇻🇳", "country_id": "10", "country_code": "84"},
-    "philipina": {"name": "Philipina", "flag": "🇵🇭", "country_id": "3", "country_code": "63"},
+    "philipina": {"name": "Philipina", "flag": "🇵🇭", "country_id": "3", "country_code": "63", "maxPrice": "0.24"},
     "colombia": {"name": "Colombia", "flag": "🇨🇴", "country_id": "33", "country_code": "57"},
 }
 
@@ -206,7 +206,10 @@ def autobuy_worker(chat_id, api_key, country_key):
             el = int(now - st_time)
             try: bot.edit_message_text(f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\n🔄 Percobaan: `{att}`x\n🎯 Dapat: `{len(orders_list)}` nomor\n⏱ Waktu: {el//60}m {el%60}s", chat_id, st_msg.message_id, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto"))); last_ui = now
             except: pass
-        res = req_api(api_key, 'getNumber', service=SERVICE, country=COUNTRIES[country_key]['country_id'])
+        kwargs = {'service': SERVICE, 'country': COUNTRIES[country_key]['country_id']}
+        if 'maxPrice' in COUNTRIES[country_key]:
+            kwargs['maxPrice'] = COUNTRIES[country_key]['maxPrice']
+        res = req_api(api_key, 'getNumber', **kwargs)
         if 'ACCESS_NUMBER' in res:
             p = res.split(':'); count += 1
             # price
@@ -276,7 +279,10 @@ def process_bulk(cid, api, count, country_key):
     # (Simplified price fetch for speed)
     pr = None
     for _ in range(count):
-        res = req_api(api, 'getNumber', service=SERVICE, country=cntry['country_id'])
+        kwargs = {'service': SERVICE, 'country': cntry['country_id']}
+        if 'maxPrice' in cntry:
+            kwargs['maxPrice'] = cntry['maxPrice']
+        res = req_api(api, 'getNumber', **kwargs)
         if 'ACCESS_NUMBER' in res:
             p = res.split(':'); orders.append({'id':p[1], 'number':p[2], 'status':'waiting', 'order_time':time.time(), 'price':pr})
         time.sleep(0.5)

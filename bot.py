@@ -30,6 +30,7 @@ OTP_TIMEOUT = 1200     # 20 Menit
 CHECK_INTERVAL = 4     # Jeda antar cek
 CANCEL_DELAY = 120     # 2 Menit
 SERVICE = "wa"         
+API_BASE = "https://hero-sms.com/stubs/handler_api.php"
 
 # =============================================
 # KONFIGURASI NEGARA

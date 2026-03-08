@@ -22,7 +22,7 @@ DB_PATH = os.environ.get("DB_PATH", "database.db")
 ADMIN_ID = 940475417
 
 MAX_ORDER = 20         # Maksimal order sekaligus
-OTP_TIMEOUT = 1200     # Timeout 20 menit (1200 detik)
+OTP_TIMEOUT = 1500     # Timeout 25 menit (1500 detik)
 CHECK_INTERVAL = 3     # Cek OTP setiap 3 detik (DICEPATKAN)
 CANCEL_DELAY = 120     # Baru bisa cancel setelah 2 menit (120 detik)
 SERVICE = "wa"         # WhatsApp service
@@ -40,21 +40,21 @@ COUNTRIES = {
         "flag": "🇻🇳",
         "country_id": "10",
         "country_code": "84",
-        "maxPrice": "0.2" # Permintaan user 0.2
+        "maxPrice": "0.2"
     },
     "philipina": {
         "name": "Philipina",
         "flag": "🇵🇭",
         "country_id": "4",
         "country_code": "63",
-        "maxPrice": "0.2" # Permintaan user 0.2
+        "maxPrice": "0.2"
     },
     "colombia": {
         "name": "Colombia",
         "flag": "🇨🇴",
         "country_id": "33",
         "country_code": "57",
-        "maxPrice": "0.2" # Permintaan user 0.2
+        "maxPrice": "0.2"
     },
 }
 
@@ -93,16 +93,13 @@ def init_db():
         detail TEXT,
         timestamp TEXT DEFAULT CURRENT_TIMESTAMP
     )''')
-    # Pastikan admin selalu ada di whitelist
+    # Admin & ENV whitelist injection
     c.execute("INSERT OR IGNORE INTO whitelist (user_id, added_by) VALUES (?, ?)", (ADMIN_ID, ADMIN_ID))
-    
-    # Masukkan otomatis ID dari environment variable
     env_wl = os.environ.get("WHITELIST_IDS", "")
     for x in env_wl.split(","):
         x_clean = "".join(filter(str.isdigit, x))
         if x_clean:
             c.execute("INSERT OR IGNORE INTO whitelist (user_id, added_by) VALUES (?, ?)", (int(x_clean), ADMIN_ID))
-            
     conn.commit()
     conn.close()
 
@@ -110,15 +107,7 @@ def init_db():
 # WHITELIST / ACCESS CONTROL
 # =============================================
 def is_whitelisted(user_id):
-    env_wl = os.environ.get("WHITELIST_IDS", "")
-    perm_wl = []
-    for x in env_wl.split(","):
-        x_clean = "".join(filter(str.isdigit, x))
-        if x_clean:
-            perm_wl.append(int(x_clean))
-    
-    if user_id == ADMIN_ID or user_id in perm_wl:
-        return True
+    if user_id == ADMIN_ID or user_id in PERMANENT_WHITELIST: return True
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT user_id FROM whitelist WHERE user_id = ?", (user_id,))
@@ -154,9 +143,7 @@ def get_all_whitelisted():
 def update_user_info(user):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("""INSERT OR REPLACE INTO user_info (user_id, first_name, last_name, username, last_seen)
-                 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)""",
-              (user.id, user.first_name, user.last_name or '', user.username or ''))
+    c.execute("INSERT OR REPLACE INTO user_info (user_id, first_name, last_name, username, last_seen) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)", (user.id, user.first_name, user.last_name or '', user.username or ''))
     conn.commit()
     conn.close()
 
@@ -171,23 +158,14 @@ def get_user_info(user_id):
 def log_activity(user_id, action, detail=""):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT INTO activity_log (user_id, action, detail) VALUES (?, ?, ?)",
-              (user_id, action, detail))
+    c.execute("INSERT INTO activity_log (user_id, action, detail) VALUES (?, ?, ?)", (user_id, action, detail))
     conn.commit()
     conn.close()
 
 def get_active_users():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("""SELECT a.user_id, u.first_name, u.last_name, u.username, 
-                        a.action, a.detail, a.timestamp
-                 FROM activity_log a
-                 LEFT JOIN user_info u ON a.user_id = u.user_id
-                 WHERE a.id IN (
-                     SELECT MAX(id) FROM activity_log GROUP BY user_id
-                 )
-                 ORDER BY a.timestamp DESC
-                 LIMIT 20""")
+    c.execute("SELECT a.user_id, u.first_name, u.last_name, u.username, a.action, a.detail, a.timestamp FROM activity_log a LEFT JOIN user_info u ON a.user_id = u.user_id WHERE a.id IN (SELECT MAX(id) FROM activity_log GROUP BY user_id) ORDER BY a.timestamp DESC LIMIT 20")
     res = c.fetchall()
     conn.close()
     return res
@@ -195,25 +173,15 @@ def get_active_users():
 def get_user_stats():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("""SELECT a.user_id, u.first_name, u.last_name, u.username,
-                        COUNT(*) as total_actions,
-                        SUM(CASE WHEN a.action = 'order' THEN 1 ELSE 0 END) as total_orders,
-                        SUM(CASE WHEN a.action = 'balance' THEN 1 ELSE 0 END) as total_balance,
-                        MAX(a.timestamp) as last_active
-                 FROM activity_log a
-                 LEFT JOIN user_info u ON a.user_id = u.user_id
-                 GROUP BY a.user_id
-                 ORDER BY last_active DESC""")
+    c.execute("SELECT a.user_id, u.first_name, u.last_name, u.username, COUNT(*) as total_actions, SUM(CASE WHEN a.action = 'order' THEN 1 ELSE 0 END) as total_orders, SUM(CASE WHEN a.action = 'balance' THEN 1 ELSE 0 END) as total_balance, MAX(a.timestamp) as last_active FROM activity_log a LEFT JOIN user_info u ON a.user_id = u.user_id GROUP BY a.user_id ORDER BY last_active DESC")
     res = c.fetchall()
     conn.close()
     return res
 
-def format_user_label(user_id, first_name, last_name, username):
-    name = first_name or "Unknown"
-    if last_name:
-        name += f" {last_name}"
-    if username:
-        name += f" (@{username})"
+def format_user_label(uid, fname, lname, uname):
+    name = fname or "Unknown"
+    if lname: name += f" {lname}"
+    if uname: name += f" (@{uname})"
     return name
 
 def get_user_api(user_id):
@@ -240,15 +208,12 @@ def req_api(api_key, action, **kwargs):
     try:
         r = requests.get(API_BASE, params=params, timeout=15)
         return r.text.strip()
-    except Exception as e:
-        return f"ERROR: {str(e)}"
+    except Exception as e: return f"ERROR: {str(e)}"
 
 def strip_country_code(number, country_code="84"):
     number = number.strip()
-    if number.startswith("+"):
-        number = number[1:]
-    if number.startswith(country_code):
-        number = number[len(country_code):]
+    if number.startswith("+"): number = number[1:]
+    if number.startswith(country_code): number = number[len(country_code):]
     return number
 
 def get_country_label(country_key):
@@ -256,7 +221,7 @@ def get_country_label(country_key):
     return f"{c['name']} {c['flag']}"
 
 # =============================================
-# FORMAT PESAN ORDER
+# FORMAT PESAN ORDER (MINIMALIST GRIZZLY STYLE)
 # =============================================
 def format_order_message(orders, title="", country_key="vietnam", start_index=1, show_progress=True):
     country = COUNTRIES.get(country_key, COUNTRIES["vietnam"])
@@ -297,35 +262,26 @@ def format_order_message(orders, title="", country_key="vietnam", start_index=1,
     if show_progress:
         lines.append("")
         lines.append(f"📊 Progress: {done_count}/{total}")
-        if done_count >= total:
-            lines.append("\n✅ *Semua order selesai!*")
+        if done_count >= total: lines.append("\n✅ *Semua order selesai!*")
 
     return "\n".join(lines)
 
 def safe_edit_message(text, chat_id, message_id, markup=None):
     try:
-        if markup:
-            bot.edit_message_text(text, chat_id, message_id, parse_mode="Markdown", reply_markup=markup)
-        else:
-            bot.edit_message_text(text, chat_id, message_id, parse_mode="Markdown")
+        if markup: bot.edit_message_text(text, chat_id, message_id, parse_mode="Markdown", reply_markup=markup)
+        else: bot.edit_message_text(text, chat_id, message_id, parse_mode="Markdown")
         return True
     except Exception as e:
         err_str = str(e).lower()
-        if "retry after" in err_str or "too many requests" in err_str:
-            time.sleep(5)
-        elif "message is not modified" in err_str:
-            return True
-        else:
-            print(f"Edit message error: {e}")
+        if "retry after" in err_str or "too many requests" in err_str: time.sleep(5)
+        elif "message is not modified" in err_str: return True
         return False
 
 # =============================================
-# AUTO-CHECK OTP (BACKGROUND THREAD)
+# AUTO-CHECK OTP
 # =============================================
 def auto_check_otp(chat_id, message_id, orders, api_key, country_key="vietnam", is_autobuy_mode=False, s_idx=1):
-    country = COUNTRIES.get(country_key, COUNTRIES["vietnam"])
     country_label = get_country_label(country_key)
-    start_time = time.time()
     last_edit_time = 0
     EDIT_COOLDOWN = 3
     last_timer_update = 0
@@ -338,32 +294,21 @@ def auto_check_otp(chat_id, message_id, orders, api_key, country_key="vietnam", 
                     time.sleep(CHECK_INTERVAL)
                     continue
                 else:
-                    text_title = "" if is_autobuy_mode else f"🛒 *Order WA {country_label} — Selesai*"
-                    text = format_order_message(orders, text_title, country_key, start_index=s_idx, show_progress=(not is_autobuy_mode))
+                    text = format_order_message(orders, "", country_key, start_index=s_idx, show_progress=False)
                     safe_edit_message(text, chat_id, message_id)
                     break
 
             now = time.time()
-            for o in orders:
-                if o['status'] == 'waiting':
-                    o_elapsed = now - o.get('order_time', now)
-                    if o_elapsed > OTP_TIMEOUT:
-                        o['status'] = 'timeout'
-                        try: req_api(api_key, 'setStatus', status='8', id=o['id'])
-                        except: pass
-
             changed = False
             for o in orders:
                 if o['status'] != 'waiting': continue
                 try:
                     res = req_api(api_key, 'getStatus', id=o['id'])
                     if res.startswith('STATUS_OK'):
-                        code = res.split(':')[1] if ':' in res else '???'
                         o['status'] = 'got_otp'
-                        o['code'] = code
+                        o['code'] = res.split(':')[1] if ':' in res else '???'
                         changed = True
-                        try: req_api(api_key, 'setStatus', status='6', id=o['id'])
-                        except: pass
+                        req_api(api_key, 'setStatus', status='6', id=o['id'])
                     elif res == 'STATUS_CANCEL':
                         o['status'] = 'cancelled'
                         changed = True
@@ -371,94 +316,51 @@ def auto_check_otp(chat_id, message_id, orders, api_key, country_key="vietnam", 
                 time.sleep(0.3)
 
             now = time.time()
-            should_update = changed or (now - last_timer_update >= 20)
-            if should_update and (now - last_edit_time >= EDIT_COOLDOWN):
-                remaining = [o for o in orders if o['status'] == 'waiting']
-                text_title = "" if is_autobuy_mode else f"🛒 *Order WA {country_label}*"
-                text = format_order_message(orders, text_title, country_key, start_index=s_idx, show_progress=(not is_autobuy_mode))
-
-                if remaining:
-                    markup = InlineKeyboardMarkup()
-                    oldest_order_time = min(o.get('order_time', now) for o in remaining)
-                    can_cancel = (now - oldest_order_time) >= CANCEL_DELAY
-
-                    if can_cancel:
-                        ids_str = ",".join([o['id'] for o in remaining])
-                        markup.row(InlineKeyboardButton(
-                            f"🚫 Batalkan ({len(remaining)})" if len(remaining) > 1 else "🚫 Batalkan Order",
-                            callback_data=f"cancelall_{ids_str}"
-                        ))
-                    else:
-                        wait_mins = int((CANCEL_DELAY - (now - oldest_order_time)) / 60) + 1
-                        markup.row(InlineKeyboardButton(
-                            f"⏳ Cancel tersedia ~{wait_mins} menit lagi",
-                            callback_data="cancel_wait"
-                        ))
-
-                    if safe_edit_message(text, chat_id, message_id, markup):
-                        last_edit_time = now
-                        last_timer_update = now
-                else:
-                    if safe_edit_message(text, chat_id, message_id):
-                        last_edit_time = now
-                        last_timer_update = now
-
-            time.sleep(CHECK_INTERVAL + 1)
-    except Exception as e:
-        print(f"Auto-check OTP thread error: {e}")
+            if changed or (now - last_timer_update >= 20):
+                if now - last_edit_time >= EDIT_COOLDOWN:
+                    text = format_order_message(orders, "", country_key, start_index=s_idx, show_progress=False)
+                    remaining = [o for o in orders if o['status'] == 'waiting']
+                    if remaining:
+                        markup = InlineKeyboardMarkup()
+                        oldest = min(o.get('order_time', now) for o in remaining)
+                        if (now - oldest) >= CANCEL_DELAY:
+                            ids = ",".join([o['id'] for o in remaining])
+                            markup.row(InlineKeyboardButton("🚫 Batalkan", callback_data=f"cancelall_{ids}"))
+                        else:
+                            wait_mins = int((CANCEL_DELAY - (now - oldest)) / 60) + 1
+                            markup.row(InlineKeyboardButton(f"⏳ Cancel in ~{wait_mins}m", callback_data="cancel_wait"))
+                        safe_edit_message(text, chat_id, message_id, markup)
+                    else: safe_edit_message(text, chat_id, message_id)
+                    last_edit_time = now
+                    last_timer_update = now
+            time.sleep(CHECK_INTERVAL)
+    except: pass
     finally:
         try:
-            if chat_id in active_orders and message_id in active_orders[chat_id]:
-                del active_orders[chat_id][message_id]
+            if chat_id in active_orders and message_id in active_orders[chat_id]: del active_orders[chat_id][message_id]
         except: pass
 
 # =============================================
-# AUTOBUY WORKER (BRUTAL MODE)
+# AUTOBUY (BRUTAL MODE)
 # =============================================
 def autobuy_worker(chat_id, api_key):
     try:
-        status_msg = bot.send_message(
-            chat_id, 
-            "🔥 *AUTO BUY AKTIF (HERO-SMS BRUTAL)*\n\n"
-            "Mencari nomor nonstop sampai saldo habis...\n"
-            "Ketik /stopauto untuk berhenti.\n\n"
-            "⏳ *Status:* Memulai pencarian (Vietnam)...", 
-            parse_mode="Markdown"
-        )
+        status_msg = bot.send_message(chat_id, "🔥 *AUTO BUY HERO-SMS START*\n\n"
+                                             "Brutal Mode Active...\n"
+                                             "Target: Vietnam (Vietnam is default)\n"
+                                             "Max Price: 0.2", parse_mode="Markdown")
     except: status_msg = None
-        
+    
     country_key = "vietnam"
     country = COUNTRIES[country_key]
     attempts = 0
-    start_time = time.time()
-    last_ui_update = time.time()
     orders_list = []
-    order_counter = 0 
+    order_counter = 0
+    start_time = time.time()
     
     while autobuy_active.get(chat_id, False):
         attempts += 1
-        now = time.time()
-        if status_msg and (now - last_ui_update > 7):
-            elapsed_m = int((now - start_time) // 60)
-            elapsed_s = int((now - start_time) % 60)
-            target_count = len(orders_list)
-            try:
-                bot.edit_message_text(
-                    f"🔥 *AUTO BUY AKTIF (BRUTAL MODE)*\n\n"
-                    f"🔄 *Status:* Sedang mencari...\n"
-                    f"📈 *Percobaan API:* {attempts}x\n"
-                    f"⏱ *Waktu berjalan:* {elapsed_m}m {elapsed_s}s\n"
-                    f"🎯 *Total didapat:* {target_count} nomor",
-                    chat_id, status_msg.message_id, parse_mode="Markdown"
-                )
-                last_ui_update = now
-            except: pass
-
-        # Paramater maxPrice dari konfigurasi negara
-        kwargs = {'service': SERVICE, 'country': country['country_id']}
-        if 'maxPrice' in country:
-            kwargs['maxPrice'] = country['maxPrice']
-            
+        kwargs = {'service': SERVICE, 'country': country['country_id'], 'maxPrice': country['maxPrice']}
         res = req_api(api_key, 'getNumber', **kwargs)
         
         if 'ACCESS_NUMBER' in res:
@@ -466,189 +368,120 @@ def autobuy_worker(chat_id, api_key):
             if len(parts) >= 3:
                 t_id, number = parts[1], parts[2]
                 order_counter += 1
-                
-                # Fetch price
+                # Fetch price for display
                 price_val = None
-                try:
-                    params = {'api_key': api_key, 'action': 'getPrices', 'service': SERVICE, 'country': str(country['country_id'])}
-                    r_p = requests.get(API_BASE, params=params, timeout=3)
-                    p_data = json.loads(r_p.text.strip())
-                    inner = None
-                    c_id_str = str(country['country_id'])
-                    if c_id_str in p_data and SERVICE in p_data[c_id_str]:
-                        inner = p_data[c_id_str][SERVICE]
-                    elif SERVICE in p_data and c_id_str in p_data[SERVICE]:
-                        inner = p_data[SERVICE][c_id_str]
-                    if inner and isinstance(inner, dict):
-                        if "cost" in inner: price_val = inner["cost"]
-                        else:
-                            nums = [float(k) for k in inner.keys() if k.replace('.', '', 1).isdigit()]
-                            if nums: price_val = min(nums)
+                try: 
+                   params = {'api_key': api_key, 'action': 'getPrices', 'service': SERVICE, 'country': country['country_id']}
+                   r_p = requests.get(API_BASE, params=params, timeout=3)
+                   d = json.loads(r_p.text)
+                   # Logic to find price in Hero-SMS JSON
+                   cid = country['country_id']
+                   inner = d.get(cid, {}).get(SERVICE) or d.get(SERVICE, {}).get(cid)
+                   if isinstance(inner, dict): price_val = inner.get('cost') or min([float(k) for k in inner.keys() if k.replace('.','',1).isdigit()])
                 except: pass
 
-                order = {'id': t_id, 'number': number, 'status': 'waiting', 'code': None, 'order_time': time.time(), 'country_key': country_key, 'price': price_val}
+                order = {'id': t_id, 'number': number, 'status': 'waiting', 'order_time': time.time(), 'price': price_val}
                 orders_list.append(order)
-                
                 text = format_order_message([order], "", country_key, start_index=order_counter, show_progress=False)
-                markup = InlineKeyboardMarkup()
-                markup.row(InlineKeyboardButton(f"⏳ Cancel tersedia ~2 menit lagi", callback_data="cancel_wait"))
-                
+                markup = InlineKeyboardMarkup().row(InlineKeyboardButton("⏳ Wait", callback_data="cancel_wait"))
                 try:
                     msg = bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=markup)
-                    if chat_id not in active_orders: active_orders[chat_id] = {}
-                    active_orders[chat_id][msg.message_id] = [order]
                     threading.Thread(target=auto_check_otp, args=(chat_id, msg.message_id, [order], api_key, country_key, True, order_counter)).start()
                 except: pass
-                
-                if status_msg:
-                    try:
-                        bot.edit_message_text(
-                            f"🔥 *AUTO BUY AKTIF (BRUTAL MODE)*\n\n"
-                            f"✅ *Target {order_counter} Didapat! Lanjut cari...*\n"
-                            f"📈 *Total percobaan:* {attempts}x\n"
-                            f"🎯 *Total didapat:* {len(orders_list)} nomor",
-                            chat_id, status_msg.message_id, parse_mode="Markdown"
-                        )
-                    except: pass
-                time.sleep(1) 
 
         elif res == 'NO_BALANCE':
-            bot.send_message(chat_id, "❌ *AUTO BUY BERHENTI*\nSaldo Anda habis!", parse_mode="Markdown")
-            autobuy_active[chat_id] = False
+            bot.send_message(chat_id, "❌ No balance.")
             break
         elif res == 'NO_NUMBERS': time.sleep(0.1)
         else: time.sleep(0.2)
-        time.sleep(0.5) 
+        time.sleep(0.5)
 
 # =============================================
-# COMMAND HANDLERS
+# HANDLERS
 # =============================================
 @bot.message_handler(commands=['adduser'])
-def adduser_cmd(message):
+def adduser(message):
     if message.from_user.id != ADMIN_ID: return
     parts = message.text.split()
-    if len(parts) < 2: return
-    try:
-        t_id = int(parts[1])
-        add_to_whitelist(t_id, message.from_user.id)
-        bot.reply_to(message, f"✅ User `{t_id}` ditambahkan.")
-    except: pass
+    if len(parts) > 1:
+        add_to_whitelist(int(parts[1]), ADMIN_ID)
+        bot.reply_to(message, "✅ Added.")
 
 @bot.message_handler(commands=['start'])
-def start_cmd(message):
+def start(message):
     if not is_whitelisted(message.from_user.id):
-        bot.send_message(message.chat.id, f"🔒 *Akses Ditolak*\nID Anda: `{message.from_user.id}`", parse_mode="Markdown")
+        bot.send_message(message.chat.id, f"🔒 Locked. ID: `{message.from_user.id}`", parse_mode="Markdown")
         return
     update_user_info(message.from_user)
     api_key = get_user_api(message.from_user.id)
-    
-    text = (
-        f"👑 *Hero-SMS v1 Bot (Grizzly Style)*\n\n"
-        f"🌍 *Negara:* Vietnam, Philippines, Colombia\n"
-        f"💰 *Max Price:* 0.2 USD\n\n"
-        f"`/setapi API_KEY` — Daftarkan API Key Hero-SMS\n"
-        f"`/autobuy` — Brutal mode Vietnam\n"
-        f"`/balance` — Cek saldo"
-    )
-    
+    text = "👑 *Hero-SMS v1 Bot*\n\nChoose country below:"
     markup = InlineKeyboardMarkup()
     if api_key:
-        markup.row(InlineKeyboardButton("🇻🇳 Vietnam", callback_data="country_vietnam"), InlineKeyboardButton("🇵🇭 Philipina", callback_data="country_philipina"))
-        markup.row(InlineKeyboardButton("🇨🇴 Colombia", callback_data="country_colombia"), InlineKeyboardButton("💰 Cek Saldo", callback_data="nav_balance"))
-        markup.row(InlineKeyboardButton("🔥 Auto Buy", callback_data="nav_autobuy"), InlineKeyboardButton("🛑 Stop Auto", callback_data="nav_stopauto"))
-    
+        markup.row(InlineKeyboardButton("🇻🇳 Vietnam", callback_data="country_vietnam"), InlineKeyboardButton("🇵🇭 Philippines", callback_data="country_philipina"))
+        markup.row(InlineKeyboardButton("🇨🇴 Colombia", callback_data="country_colombia"), InlineKeyboardButton("💰 Balance", callback_data="nav_balance"))
+        markup.row(InlineKeyboardButton("🔥 Auto Buy", callback_data="nav_autobuy"), InlineKeyboardButton("🛑 Stop", callback_data="nav_stopauto"))
     bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
 
 @bot.message_handler(commands=['setapi'])
-def setapi_cmd(message):
+def setapi(message):
     if not is_whitelisted(message.from_user.id): return
-    parts = message.text.split(maxsplit=1)
-    if len(parts) < 2: return
-    api_key = parts[1].strip()
-    res = req_api(api_key, 'getBalance')
-    if 'ACCESS_BALANCE' in res:
-        set_user_api(message.from_user.id, api_key)
-        bot.reply_to(message, "✅ API Key tersimpan!")
-    else: bot.reply_to(message, "❌ Invalid API Key.")
-
-@bot.message_handler(commands=['balance'])
-def balance_cmd(message):
-    if not is_whitelisted(message.from_user.id): return
-    api_key = get_user_api(message.from_user.id)
-    if not api_key: return
-    res = req_api(api_key, 'getBalance')
-    if 'ACCESS_BALANCE' in res:
-        bot.reply_to(message, f"💰 Saldo: *{res.split(':')[1]} USD*", parse_mode="Markdown")
+    parts = message.text.split()
+    if len(parts) > 1:
+        api = parts[1].strip()
+        if 'ACCESS_BALANCE' in req_api(api, 'getBalance'):
+            set_user_api(message.from_user.id, api)
+            bot.reply_to(message, "✅ Saved.")
+        else: bot.reply_to(message, "❌ Invalid.")
 
 @bot.message_handler(commands=['autobuy'])
-def autobuy_cmd(message):
+def autobuy(message):
     if not is_whitelisted(message.from_user.id): return
-    api_key = get_user_api(message.from_user.id)
-    if not api_key: return
-    autobuy_active[message.chat.id] = True
-    threading.Thread(target=autobuy_worker, args=(message.chat.id, api_key)).start()
+    api = get_user_api(message.from_user.id)
+    if api:
+        autobuy_active[message.chat.id] = True
+        threading.Thread(target=autobuy_worker, args=(message.chat.id, api)).start()
 
 @bot.message_handler(commands=['stopauto'])
-def stopauto_cmd(message):
+def stop(message):
     autobuy_active[message.chat.id] = False
     bot.reply_to(message, "🛑 Stop.")
 
 @bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    data = call.data
-    api_key = get_user_api(call.from_user.id)
-    
-    if data.startswith("country_"):
-        ck = data.split("_")[1]
-        markup = InlineKeyboardMarkup()
-        markup.row(InlineKeyboardButton("1", callback_data=f"quick_{ck}_1"), InlineKeyboardButton("2", callback_data=f"quick_{ck}_2"), InlineKeyboardButton("3", callback_data=f"quick_{ck}_3"))
-        markup.row(InlineKeyboardButton("4", callback_data=f"quick_{ck}_4"), InlineKeyboardButton("5", callback_data=f"quick_{ck}_5"))
-        bot.edit_message_text(f"🛒 Pilih jumlah order ({ck}):", call.message.chat.id, call.message.message_id, reply_markup=markup)
-        
-    elif data.startswith("quick_"):
-        parts = data.split("_")
-        process_bulk_order(call.message.chat.id, api_key, int(parts[2]), parts[1])
-        
-    elif data == "nav_balance":
-        balance_cmd(call.message)
-    elif data == "nav_autobuy":
-        autobuy_cmd(call.message)
-    elif data == "nav_stopauto":
-        stopauto_cmd(call.message)
-    elif data == "cancel_wait":
-        bot.answer_callback_query(call.id, "⏳ Tunggu 2 menit.", show_alert=True)
-    elif data.startswith("cancelall_"):
-        ids = data.split("_")[1].split(",")
-        for t_id in ids: req_api(api_key, 'setStatus', status='8', id=t_id)
-        bot.answer_callback_query(call.id, "✅ OK")
+def calls(call):
+    if not is_whitelisted(call.from_user.id): return
+    api = get_user_api(call.from_user.id)
+    if call.data.startswith("country_"):
+        c = call.data.split("_")[1]
+        m = InlineKeyboardMarkup()
+        for i in range(1, 6): m.add(InlineKeyboardButton(str(i), callback_data=f"buy_{c}_{i}"))
+        bot.edit_message_text(f"Quantity for {c}:", call.message.chat.id, call.message.message_id, reply_markup=m)
+    elif call.data.startswith("buy_"):
+        p = call.data.split("_")
+        process_bulk(call.message.chat.id, api, int(p[2]), p[1])
+    elif call.data == "nav_balance":
+        res = req_api(api, 'getBalance')
+        bot.answer_callback_query(call.id, f"Saldo: {res.split(':')[1]} USD", show_alert=True)
+    elif call.data == "nav_autobuy": autobuy(call.message)
+    elif call.data == "nav_stopauto": stop(call.message)
+    elif call.data == "cancel_wait": bot.answer_callback_query(call.id, "Wait 2m", show_alert=True)
 
-def process_bulk_order(chat_id, api_key, count, country_key):
+def process_bulk(chat_id, api, count, country_key):
     country = COUNTRIES[country_key]
-    msg = bot.send_message(chat_id, f"⏳ Memesan {count} nomor...")
+    msg = bot.send_message(chat_id, f"⏳ Ordering {count}...")
     orders = []
     for _ in range(count):
-        kwargs = {'service': SERVICE, 'country': country['country_id']}
-        if 'maxPrice' in country: kwargs['maxPrice'] = country['maxPrice']
-        res = req_api(api_key, 'getNumber', **kwargs)
+        res = req_api(api, 'getNumber', service=SERVICE, country=country['country_id'], maxPrice=country['maxPrice'])
         if 'ACCESS_NUMBER' in res:
             parts = res.split(':')
-            orders.append({'id': parts[1], 'number': parts[2], 'status': 'waiting', 'order_time': time.time(), 'country_key': country_key, 'price': None})
+            orders.append({'id': parts[1], 'number': parts[2], 'status': 'waiting', 'order_time': time.time(), 'price': None})
         time.sleep(0.5)
-    
     if orders:
-        text = format_order_message(orders, f"🛒 Order {get_country_label(country_key)}", country_key)
-        markup = InlineKeyboardMarkup()
-        markup.row(InlineKeyboardButton("⏳ Cancel nanti", callback_data="cancel_wait"))
+        text = format_order_message(orders, f"🛒 {get_country_label(country_key)}", country_key)
+        markup = InlineKeyboardMarkup().row(InlineKeyboardButton("⏳ Wait", callback_data="cancel_wait"))
         bot.edit_message_text(text, chat_id, msg.message_id, parse_mode="Markdown", reply_markup=markup)
-        threading.Thread(target=auto_check_otp, args=(chat_id, msg.message_id, orders, api_key, country_key)).start()
-    else: bot.edit_message_text("❌ Gagal.", chat_id, msg.message_id)
-
-@bot.message_handler(func=lambda message: True)
-def catch_all(message):
-    if not is_whitelisted(message.from_user.id):
-        bot.reply_to(message, f"🔒 Locked. ID: `{message.from_user.id}`", parse_mode="Markdown")
+        threading.Thread(target=auto_check_otp, args=(chat_id, msg.message_id, orders, api, country_key)).start()
+    else: bot.edit_message_text("❌ No numbers.", chat_id, msg.message_id)
 
 if __name__ == '__main__':
     init_db()
-    print("Hero-SMS Bot running...")
     bot.infinity_polling()

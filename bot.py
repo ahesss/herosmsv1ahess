@@ -1,5 +1,5 @@
 import telebot
-# Trigger redeploy - FIXED TIMER & THREADING (Cloned exactly from working patterns)
+# Trigger redeploy - Persistence Test 1
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 import sqlite3

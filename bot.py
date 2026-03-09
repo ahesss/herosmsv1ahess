@@ -36,8 +36,8 @@ API_BASE = "https://hero-sms.com/stubs/handler_api.php"
 # KONFIGURASI NEGARA
 # =============================================
 COUNTRIES = {
-    "vietnam": {"name": "Vietnam", "flag": "🇻🇳", "country_id": "10", "country_code": "84", "maxPrice": "0.25"},
-    "philipina": {"name": "Philipina", "flag": "🇵🇭", "country_id": "4", "country_code": "63", "maxPrice": "0.25"},
+    "vietnam": {"name": "Vietnam", "flag": "🇻🇳", "country_id": "10", "country_code": "84", "maxPrice": "0.25", "minPrice": 0.15},
+    "philipina": {"name": "Philipina", "flag": "🇵🇭", "country_id": "3", "country_code": "63", "maxPrice": "0.25", "minPrice": 0.15},
     "colombia": {"name": "Colombia", "flag": "🇨🇴", "country_id": "33", "country_code": "57"},
 }
 
@@ -193,8 +193,8 @@ def auto_check_otp(chat_id, message_id, orders, api_key, country_key="vietnam", 
             time.sleep(0.5) # Jeda antar request dalam loop
 
         now = time.time()
-        # FORCE UPDATE UI TIAP 8 DETIK AGAR TIMER JELAS JALAN
-        if changed_status or (now - last_ui_update >= 8):
+        # FORCE UPDATE UI AGAR TIMER JELAS JALAN
+        if changed_status or (now - last_ui_update >= 4):
             title = "" if is_autobuy else f"🛒 *Order WA {COUNTRIES[country_key]['name']}*"
             text = format_order_message(orders, title, country_key, s_idx, not is_autobuy)
             markup = InlineKeyboardMarkup()
@@ -230,7 +230,13 @@ def autobuy_worker(chat_id, api_key, country_key):
         res = req_api(api_key, 'getNumber', **kwargs)
         if 'ACCESS_NUMBER' in res:
             p = res.split(':'); act_id = p[1]; number = p[2]
+            # Cek harga — jika di bawah minPrice, cancel dan skip
             pr = fetch_price(api_key, country_key)
+            min_pr = COUNTRIES[country_key].get('minPrice')
+            if min_pr and pr and pr < min_pr:
+                req_api(api_key, 'setStatus', status='8', id=act_id)
+                time.sleep(0.3)
+                continue
             count += 1
             o = {'id': act_id, 'number': number, 'status': 'waiting', 'order_time': time.time(), 'price': pr}
             orders_list.append(o)
@@ -367,6 +373,7 @@ def callback_q(call):
 def process_bulk(cid, api, count, country_key):
     cntry = COUNTRIES[country_key]; msg = bot.send_message(cid, f"⏳ Pesan {count} nomor...")
     orders = []
+    min_pr = cntry.get('minPrice')
     max_retries = count * 3  # Batas retry agar tidak infinite loop
     attempts = 0
     while len(orders) < count and attempts < max_retries:
@@ -378,6 +385,11 @@ def process_bulk(cid, api, count, country_key):
         if 'ACCESS_NUMBER' in res:
             p = res.split(':'); act_id = p[1]; number = p[2]
             pr = fetch_price(api, country_key)
+            # Filter harga minimum
+            if min_pr and pr and pr < min_pr:
+                req_api(api, 'setStatus', status='8', id=act_id)
+                time.sleep(0.3)
+                continue
             orders.append({'id': act_id, 'number': number, 'status':'waiting', 'order_time':time.time(), 'price': pr})
         elif res == 'NO_BALANCE':
             break

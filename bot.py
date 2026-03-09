@@ -135,7 +135,7 @@ def format_order_message(orders, title="", country_key="vietnam", start_index=1,
     for i, order in enumerate(orders, start_index):
         number_local = strip_country_code(order['number'], country['country_code'])
         status = order.get('status', 'waiting')
-        price_str = f" [💰 {order['price']} USD]" if order.get('price') else ""
+        price_str = f" | 💰 {order['price']} USD" if order.get('price') else ""
         if status == 'waiting':
             elapsed = now - order['order_time']
             rem = max(0, OTP_TIMEOUT - elapsed)

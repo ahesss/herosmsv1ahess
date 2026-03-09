@@ -36,8 +36,8 @@ API_BASE = "https://hero-sms.com/stubs/handler_api.php"
 # KONFIGURASI NEGARA
 # =============================================
 COUNTRIES = {
-    "vietnam": {"name": "Vietnam", "flag": "🇻🇳", "country_id": "10", "country_code": "84", "maxPrice": "0.25", "minPrice": 0.15},
-    "philipina": {"name": "Philipina", "flag": "🇵🇭", "country_id": "3", "country_code": "63", "maxPrice": "0.25", "minPrice": 0.15},
+    "vietnam": {"name": "Vietnam", "flag": "🇻🇳", "country_id": "10", "country_code": "84"},
+    "philipina": {"name": "Philipina", "flag": "🇵🇭", "country_id": "4", "country_code": "63"},
     "colombia": {"name": "Colombia", "flag": "🇨🇴", "country_id": "33", "country_code": "57"},
 }
 
@@ -224,19 +224,10 @@ def autobuy_worker(chat_id, api_key, country_key):
             el = int(now - st_time)
             try: bot.edit_message_text(f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\n🔄 Percobaan: `{att}`x\n🎯 Dapat: `{len(orders_list)}` nomor\n⏱ Waktu: {el//60}m {el%60}s", chat_id, st_msg.message_id, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto"))); last_ui = now
             except: pass
-        kwargs = {'service': SERVICE, 'country': COUNTRIES[country_key]['country_id']}
-        if 'maxPrice' in COUNTRIES[country_key]:
-            kwargs['maxPrice'] = COUNTRIES[country_key]['maxPrice']
-        res = req_api(api_key, 'getNumber', **kwargs)
+        res = req_api(api_key, 'getNumber', service=SERVICE, country=COUNTRIES[country_key]['country_id'])
         if 'ACCESS_NUMBER' in res:
             p = res.split(':'); act_id = p[1]; number = p[2]
-            # Cek harga — jika di bawah minPrice, cancel dan skip
             pr = fetch_price(api_key, country_key)
-            min_pr = COUNTRIES[country_key].get('minPrice')
-            if min_pr and pr and pr < min_pr:
-                req_api(api_key, 'setStatus', status='8', id=act_id)
-                time.sleep(0.3)
-                continue
             count += 1
             o = {'id': act_id, 'number': number, 'status': 'waiting', 'order_time': time.time(), 'price': pr}
             orders_list.append(o)
@@ -373,23 +364,14 @@ def callback_q(call):
 def process_bulk(cid, api, count, country_key):
     cntry = COUNTRIES[country_key]; msg = bot.send_message(cid, f"⏳ Pesan {count} nomor...")
     orders = []
-    min_pr = cntry.get('minPrice')
     max_retries = count * 3  # Batas retry agar tidak infinite loop
     attempts = 0
     while len(orders) < count and attempts < max_retries:
         attempts += 1
-        kwargs = {'service': SERVICE, 'country': cntry['country_id']}
-        if 'maxPrice' in cntry:
-            kwargs['maxPrice'] = cntry['maxPrice']
-        res = req_api(api, 'getNumber', **kwargs)
+        res = req_api(api, 'getNumber', service=SERVICE, country=cntry['country_id'])
         if 'ACCESS_NUMBER' in res:
             p = res.split(':'); act_id = p[1]; number = p[2]
             pr = fetch_price(api, country_key)
-            # Filter harga minimum
-            if min_pr and pr and pr < min_pr:
-                req_api(api, 'setStatus', status='8', id=act_id)
-                time.sleep(0.3)
-                continue
             orders.append({'id': act_id, 'number': number, 'status':'waiting', 'order_time':time.time(), 'price': pr})
         elif res == 'NO_BALANCE':
             break

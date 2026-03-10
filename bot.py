@@ -40,6 +40,7 @@ COUNTRIES = {
     "philipina": {"name": "Philipina", "flag": "🇵🇭", "country_id": "3", "country_code": "63", "maxPrice": "0.25", "minPrice": 0.15},
     "colombia": {"name": "Colombia", "flag": "🇨🇴", "country_id": "33", "country_code": "57"},
     "mexico": {"name": "Mexico", "flag": "🇲🇽", "country_id": "54", "country_code": "52"},
+    "brazil": {"name": "Brazil", "flag": "🇧🇷", "country_id": "73", "country_code": "55"},
 }
 
 active_orders = {}
@@ -337,7 +338,8 @@ def start(message):
         if 'ACCESS_BALANCE' in bal: text += f"✅ API OK | 💰 Saldo: *{bal.split(':')[1]} USD*"
     else: text += "❌ Belum ada API."
     markup = InlineKeyboardMarkup()
-    markup.row(InlineKeyboardButton("🇻🇳 Vietnam", callback_data="country_vietnam"), InlineKeyboardButton("🇵🇭 Philipina", callback_data="country_philipina"), InlineKeyboardButton("🇨🇴 Colombia", callback_data="country_colombia"), InlineKeyboardButton("🇲🇽 Mexico", callback_data="country_mexico"))
+    markup.row(InlineKeyboardButton("🇻🇳 Vietnam", callback_data="country_vietnam"), InlineKeyboardButton("🇵🇭 Philipina", callback_data="country_philipina"), InlineKeyboardButton("🇨🇴 Colombia", callback_data="country_colombia"))
+    markup.row(InlineKeyboardButton("🇲🇽 Mexico", callback_data="country_mexico"), InlineKeyboardButton("🇧🇷 Brazil", callback_data="country_brazil"))
     markup.row(InlineKeyboardButton("🛒 Order", callback_data="nav_order"), InlineKeyboardButton("💰 Saldo", callback_data="nav_balance"))
     markup.row(InlineKeyboardButton("🚀 AUTO BUY SUPER BRUTAL", callback_data="nav_autobuy"), InlineKeyboardButton("🛑 Stop", callback_data="nav_stopauto"))
     bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
@@ -353,7 +355,9 @@ def callback_q(call):
     elif data.startswith("quick_"):
         bot.answer_callback_query(call.id); p = data.split("_"); process_bulk(cid, key, int(p[2]), p[1])
     elif data == "nav_autobuy":
-        m = InlineKeyboardMarkup().row(InlineKeyboardButton("🇻🇳 VN", callback_data="auto_vietnam"), InlineKeyboardButton("🇵🇭 PH", callback_data="auto_philipina"), InlineKeyboardButton("🇨🇴 CO", callback_data="auto_colombia"), InlineKeyboardButton("🇲🇽 MX", callback_data="auto_mexico"))
+        m = InlineKeyboardMarkup()
+        m.row(InlineKeyboardButton("🇻🇳 VN", callback_data="auto_vietnam"), InlineKeyboardButton("🇵🇭 PH", callback_data="auto_philipina"), InlineKeyboardButton("🇨🇴 CO", callback_data="auto_colombia"))
+        m.row(InlineKeyboardButton("🇲🇽 MX", callback_data="auto_mexico"), InlineKeyboardButton("🇧🇷 BR", callback_data="auto_brazil"))
         bot.send_message(cid, "🚀 *Pilih negara Auto Buy:*", parse_mode="Markdown", reply_markup=m)
     elif data.startswith("auto_"):
         ck = data.split("_")[1]; autobuy_active[cid] = ck; threading.Thread(target=autobuy_worker, args=(cid, key, ck)).start()

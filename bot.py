@@ -226,18 +226,10 @@ def autobuy_worker(chat_id, api_key, country_key):
             try: bot.edit_message_text(f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\n🔄 Percobaan: `{att}`x\n🎯 Dapat: `{len(orders_list)}` nomor\n⏱ Waktu: {el//60}m {el%60}s", chat_id, st_msg.message_id, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto"))); last_ui = now
             except: pass
         kwargs = {'service': SERVICE, 'country': COUNTRIES[country_key]['country_id']}
-        if 'maxPrice' in COUNTRIES[country_key]:
-            kwargs['maxPrice'] = COUNTRIES[country_key]['maxPrice']
         res = req_api(api_key, 'getNumber', **kwargs)
         if 'ACCESS_NUMBER' in res:
             p = res.split(':'); act_id = p[1]; number = p[2]
-            # Cek harga — jika di bawah minPrice, cancel dan skip
             pr = fetch_price(api_key, country_key)
-            min_pr = COUNTRIES[country_key].get('minPrice')
-            if min_pr and pr and pr < min_pr:
-                req_api(api_key, 'setStatus', status='8', id=act_id)
-                time.sleep(0.3)
-                continue
             count += 1
             o = {'id': act_id, 'number': number, 'status': 'waiting', 'order_time': time.time(), 'price': pr}
             orders_list.append(o)

@@ -40,7 +40,7 @@ COUNTRIES = {
     "philipina": {"name": "Philipina", "flag": "🇵🇭", "country_id": "3", "country_code": "63", "maxPrice": "0.25", "minPrice": 0.15},
     "colombia": {"name": "Colombia", "flag": "🇨🇴", "country_id": "33", "country_code": "57"},
     "mexico": {"name": "Mexico", "flag": "🇲🇽", "country_id": "54", "country_code": "52"},
-    "brazil": {"name": "Brazil", "flag": "🇧🇷", "country_id": "73", "country_code": "55"},
+    "brazil": {"name": "Brazil", "flag": "🇧🇷", "country_id": "73"},
 }
 
 active_orders = {}
@@ -135,7 +135,7 @@ def format_order_message(orders, title="", country_key="vietnam", start_index=1,
     done_count = 0
     now = time.time()
     for i, order in enumerate(orders, start_index):
-        number_local = strip_country_code(order['number'], country['country_code'])
+        number_local = strip_country_code(order['number'], country.get('country_code', ''))
         status = order.get('status', 'waiting')
         price_str = f" | 💰 {order['price']} USD" if order.get('price') else ""
         if status == 'waiting':

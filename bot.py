@@ -197,7 +197,7 @@ def auto_check_otp(chat_id, message_id, orders, api_key, country_key="vietnam", 
         if not waiting:
             title = "" if is_autobuy else f"🛒 *Order WA {COUNTRIES[country_key]['name']} — Selesai*"
             safe_edit_message(format_order_message(orders, title, country_key, s_idx, not is_autobuy), chat_id, message_id)
-                break
+            break
         
         now = time.time()
         # Timer check & OTP check

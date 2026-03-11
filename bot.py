@@ -101,8 +101,32 @@ def req_api(api_key, action, **kwargs):
         return r.text.strip()
     except Exception as e: return f"ERROR: {str(e)}"
 
+def fetch_price_by_activation(api_key, activation_id):
+    """Ambil harga ASLI dari activation yang sudah dibeli"""
+    try:
+        res = req_api(api_key, 'getActiveActivations')
+        if res.startswith("{"):
+            d = json.loads(res)
+            # Format: {"status":"success","activeActivations":{"ID":{"activationCost":"1.30",...},...}}
+            activations = d.get('activeActivations', d)
+            if isinstance(activations, dict):
+                act = activations.get(str(activation_id))
+                if act and isinstance(act, dict):
+                    cost = act.get('activationCost') or act.get('cost') or act.get('sum')
+                    if cost:
+                        return float(cost)
+                # Coba cari di semua activations
+                for aid, info in activations.items():
+                    if str(aid) == str(activation_id) and isinstance(info, dict):
+                        cost = info.get('activationCost') or info.get('cost') or info.get('sum')
+                        if cost:
+                            return float(cost)
+    except:
+        pass
+    return None
+
 def fetch_price(api_key, country_key):
-    """Ambil harga nomor YANG TERSEDIA dari API (filter stok 0)"""
+    """Fallback: ambil harga dari getPrices (hanya dipakai kalau activation lookup gagal)"""
     try:
         cid = COUNTRIES[country_key]['country_id']
         res_p = req_api(api_key, 'getPrices', service=SERVICE, country=cid)
@@ -112,22 +136,6 @@ def fetch_price(api_key, country_key):
             if inn:
                 if 'cost' in inn:
                     return float(inn['cost'])
-                # Filter hanya harga yang stoknya > 0
-                available = []
-                for k, v in inn.items():
-                    if not k.replace('.','').isdigit():
-                        continue
-                    price = float(k)
-                    # v bisa berupa dict {"count": N} atau langsung angka count
-                    if isinstance(v, dict):
-                        cnt = v.get('count', 0)
-                    else:
-                        cnt = int(v) if str(v).isdigit() else 0
-                    if cnt > 0:
-                        available.append(price)
-                if available:
-                    return min(available)  # Termurah yang MASIH ADA stok
-                # Kalau semua stok 0, return harga tertinggi sebagai referensi
                 numeric_keys = [float(k) for k in inn.keys() if k.replace('.','').isdigit()]
                 if numeric_keys:
                     return max(numeric_keys)
@@ -254,7 +262,7 @@ def autobuy_worker(chat_id, api_key, country_key):
         if 'ACCESS_NUMBER' in res:
             no_number_streak = 0
             p = res.split(':'); act_id = p[1]; number = p[2]
-            pr = fetch_price(api_key, country_key)
+            pr = fetch_price_by_activation(api_key, act_id) or fetch_price(api_key, country_key)
             count += 1
             o = {'id': act_id, 'number': number, 'status': 'waiting', 'order_time': time.time(), 'price': pr}
             orders_list.append(o)
@@ -421,7 +429,7 @@ def process_bulk(cid, api, count, country_key):
         res = req_api(api, 'getNumber', **kwargs)
         if 'ACCESS_NUMBER' in res:
             p = res.split(':'); act_id = p[1]; number = p[2]
-            pr = fetch_price(api, country_key)
+            pr = fetch_price_by_activation(api, act_id) or fetch_price(api, country_key)
             # Filter harga minimum
             if min_pr and pr and pr < min_pr:
                 req_api(api, 'setStatus', status='8', id=act_id)

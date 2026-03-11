@@ -1,5 +1,5 @@
 import telebot
-# Trigger redeploy - Persistence Test Final Check
+# SUPER BRUTAL V3 - Brazil + All Countries Brutal
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 import sqlite3
@@ -38,9 +38,9 @@ API_BASE = "https://hero-sms.com/stubs/handler_api.php"
 COUNTRIES = {
     "vietnam": {"name": "Vietnam", "flag": "🇻🇳", "country_id": "10", "country_code": "84", "maxPrice": "0.25", "minPrice": 0.15},
     "philipina": {"name": "Philipina", "flag": "🇵🇭", "country_id": "3", "country_code": "63", "maxPrice": "0.25", "minPrice": 0.15},
-    "colombia": {"name": "Colombia", "flag": "🇨🇴", "country_id": "33", "country_code": "57"},
-    "mexico": {"name": "Mexico", "flag": "🇲🇽", "country_id": "54", "country_code": "52"},
-    "brazil": {"name": "Brazil", "flag": "🇧🇷", "country_id": "73"},
+    "colombia": {"name": "Colombia", "flag": "🇨🇴", "country_id": "33", "country_code": "57", "maxPrice": "0.50"},
+    "mexico": {"name": "Mexico", "flag": "🇲🇽", "country_id": "54", "country_code": "52", "maxPrice": "0.50"},
+    "brazil": {"name": "Brazil", "flag": "🇧🇷", "country_id": "73", "country_code": "55", "maxPrice": "1.50"},
 }
 
 active_orders = {}
@@ -135,7 +135,7 @@ def format_order_message(orders, title="", country_key="vietnam", start_index=1,
     done_count = 0
     now = time.time()
     for i, order in enumerate(orders, start_index):
-        number_local = strip_country_code(order['number'], country.get('country_code', ''))
+        number_local = strip_country_code(order['number'], country['country_code'])
         status = order.get('status', 'waiting')
         price_str = f" | 💰 {order['price']} USD" if order.get('price') else ""
         if status == 'waiting':
@@ -212,23 +212,31 @@ def auto_check_otp(chat_id, message_id, orders, api_key, country_key="vietnam", 
         time.sleep(CHECK_INTERVAL)
 
 # =============================================
-# AUTO BUY (SUPER BRUTAL)
+# AUTO BUY (SUPER BRUTAL V3)
 # =============================================
 def autobuy_worker(chat_id, api_key, country_key):
+    cntry = COUNTRIES[country_key]
     try:
-        st_msg = bot.send_message(chat_id, f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\nMode: Super Brutal (No Sleep)\n🔄 Percobaan: 0", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto")))
+        st_msg = bot.send_message(chat_id, f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\nMode: ⚡ ULTRA BRUTAL (MaxPrice: {cntry.get('maxPrice','N/A')})\n🔄 Percobaan: 0", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto")))
     except: st_msg = None
     att, count, orders_list = 0, 0, []
     st_time, last_ui = time.time(), time.time()
+    no_number_streak = 0
     while autobuy_active.get(chat_id) == country_key:
         att += 1; now = time.time()
-        if st_msg and (now - last_ui > 7):
+        # Update UI setiap 5 detik (aman dari Telegram rate limit)
+        if st_msg and (now - last_ui > 5):
             el = int(now - st_time)
-            try: bot.edit_message_text(f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\n🔄 Percobaan: `{att}`x\n🎯 Dapat: `{len(orders_list)}` nomor\n⏱ Waktu: {el//60}m {el%60}s", chat_id, st_msg.message_id, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto"))); last_ui = now
+            speed = att / max(el, 1)
+            try: bot.edit_message_text(f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\n⚡ Mode: ULTRA BRUTAL\n💰 MaxPrice: `{cntry.get('maxPrice','N/A')}` USD\n🔄 Percobaan: `{att}`x ({speed:.1f}/detik)\n🎯 Dapat: `{len(orders_list)}` nomor\n⏱ Waktu: {el//60}m {el%60}s\n📡 Status: {'🟢 Hunting...' if no_number_streak < 10 else '🟡 Menunggu stok...'}", chat_id, st_msg.message_id, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto"))); last_ui = now
             except: pass
-        kwargs = {'service': SERVICE, 'country': COUNTRIES[country_key]['country_id'], 'operator': 'any'}
+        # === BRUTAL REQUEST WITH maxPrice ===
+        kwargs = {'service': SERVICE, 'country': cntry['country_id']}
+        if 'maxPrice' in cntry:
+            kwargs['maxPrice'] = cntry['maxPrice']
         res = req_api(api_key, 'getNumber', **kwargs)
         if 'ACCESS_NUMBER' in res:
+            no_number_streak = 0
             p = res.split(':'); act_id = p[1]; number = p[2]
             pr = fetch_price(api_key, country_key)
             count += 1
@@ -236,13 +244,29 @@ def autobuy_worker(chat_id, api_key, country_key):
             orders_list.append(o)
             try:
                 m = bot.send_message(chat_id, format_order_message([o], "", country_key, count, False), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("⏳ Wait...", callback_data="cancel_wait")))
-                threading.Thread(target=auto_check_otp, args=(chat_id, m.message_id, [o], api_key, country_key, True, count)).start()
+                threading.Thread(target=auto_check_otp, args=(chat_id, m.message_id, [o], api_key, country_key, True, count), daemon=True).start()
             except: pass
-            time.sleep(1)
-        elif res == 'NO_BALANCE': break
-        elif res == 'NO_NUMBERS': pass
-        else: time.sleep(0.3)
-    if st_msg: bot.edit_message_text(f"🛑 *AUTO BUY SELESAI*\nTotal: {len(orders_list)}", chat_id, st_msg.message_id)
+            # Jeda minimal setelah dapat nomor agar tidak double charge
+            time.sleep(0.5)
+        elif res == 'NO_BALANCE':
+            try: bot.send_message(chat_id, "💸 *SALDO HABIS!* Auto buy dihentikan.", parse_mode="Markdown")
+            except: pass
+            break
+        elif res == 'NO_NUMBERS':
+            no_number_streak += 1
+            # Brutal: jeda sangat pendek, langsung retry
+            if no_number_streak > 50:
+                time.sleep(0.15)  # Sedikit lebih lama kalau sudah lama kosong
+            else:
+                time.sleep(0.05)  # Ultra cepat retry
+        else:
+            no_number_streak = 0
+            time.sleep(0.1)  # Error lain, retry cepat
+    autobuy_active[chat_id] = False
+    if st_msg:
+        el = int(time.time() - st_time)
+        try: bot.edit_message_text(f"🛑 *AUTO BUY SELESAI*\n\n🎯 Total dapat: `{len(orders_list)}` nomor\n🔄 Total percobaan: `{att}`x\n⏱ Durasi: {el//60}m {el%60}s", chat_id, st_msg.message_id, parse_mode="Markdown")
+        except: pass
 
 # =============================================
 # WHITELIST MANAGEMENT
@@ -341,7 +365,7 @@ def start(message):
     markup.row(InlineKeyboardButton("🇻🇳 Vietnam", callback_data="country_vietnam"), InlineKeyboardButton("🇵🇭 Philipina", callback_data="country_philipina"), InlineKeyboardButton("🇨🇴 Colombia", callback_data="country_colombia"))
     markup.row(InlineKeyboardButton("🇲🇽 Mexico", callback_data="country_mexico"), InlineKeyboardButton("🇧🇷 Brazil", callback_data="country_brazil"))
     markup.row(InlineKeyboardButton("🛒 Order", callback_data="nav_order"), InlineKeyboardButton("💰 Saldo", callback_data="nav_balance"))
-    markup.row(InlineKeyboardButton("🚀 AUTO BUY SUPER BRUTAL", callback_data="nav_autobuy"), InlineKeyboardButton("🛑 Stop", callback_data="nav_stopauto"))
+    markup.row(InlineKeyboardButton("🚀 AUTO BUY BRUTAL", callback_data="nav_autobuy"), InlineKeyboardButton("🛑 Stop", callback_data="nav_stopauto"))
     bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -368,14 +392,14 @@ def callback_q(call):
         bot.answer_callback_query(call.id, "✅")
 
 def process_bulk(cid, api, count, country_key):
-    cntry = COUNTRIES[country_key]; msg = bot.send_message(cid, f"⏳ Pesan {count} nomor...")
+    cntry = COUNTRIES[country_key]; msg = bot.send_message(cid, f"⏳ Pesan {count} nomor {cntry['name']}...")
     orders = []
     min_pr = cntry.get('minPrice')
-    max_retries = count * 3  # Batas retry agar tidak infinite loop
+    max_retries = count * 5  # Lebih banyak retry untuk brutal buy
     attempts = 0
     while len(orders) < count and attempts < max_retries:
         attempts += 1
-        kwargs = {'service': SERVICE, 'country': cntry['country_id'], 'operator': 'any'}
+        kwargs = {'service': SERVICE, 'country': cntry['country_id']}
         if 'maxPrice' in cntry:
             kwargs['maxPrice'] = cntry['maxPrice']
         res = req_api(api, 'getNumber', **kwargs)
@@ -385,19 +409,21 @@ def process_bulk(cid, api, count, country_key):
             # Filter harga minimum
             if min_pr and pr and pr < min_pr:
                 req_api(api, 'setStatus', status='8', id=act_id)
-                time.sleep(0.3)
+                time.sleep(0.2)
                 continue
             orders.append({'id': act_id, 'number': number, 'status':'waiting', 'order_time':time.time(), 'price': pr})
         elif res == 'NO_BALANCE':
             break
         elif res == 'NO_NUMBERS':
-            if not orders and attempts >= 3:
+            if not orders and attempts >= 5:
                 break
-        time.sleep(0.5)
+            time.sleep(0.1)  # Cepat retry saat no numbers
+            continue
+        time.sleep(0.3)
     if orders:
         bot.edit_message_text(format_order_message(orders, f"🛒 *Order {cntry['name']}*", country_key), cid, msg.message_id, parse_mode="Markdown")
-        threading.Thread(target=auto_check_otp, args=(cid, msg.message_id, orders, api, country_key)).start()
-    else: bot.edit_message_text("❌ Gagal.", cid, msg.message_id)
+        threading.Thread(target=auto_check_otp, args=(cid, msg.message_id, orders, api, country_key), daemon=True).start()
+    else: bot.edit_message_text(f"❌ Gagal order {cntry['name']}. Coba lagi.", cid, msg.message_id)
 
 @bot.message_handler(commands=['setapi'])
 def setapi(message):

@@ -11,7 +11,7 @@ import time
 # =============================================
 # KONFIGURASI
 # =============================================
-TOKEN = os.environ.get("BOT_TOKEN", "8766843422:AAGt3yP_3fwOO0Y-w7066-N-p0LRy8iqZKU")
+TOKEN = os.environ.get("BOT_TOKEN", "8605750682:AAG3Jl-y-LiRbuQbEfWdvsahKq2zULo-bpg")
 bot = telebot.TeleBot(TOKEN)
 
 # =============================================

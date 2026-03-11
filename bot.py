@@ -38,8 +38,8 @@ API_BASE = "https://hero-sms.com/stubs/handler_api.php"
 COUNTRIES = {
     "vietnam": {"name": "Vietnam", "flag": "🇻🇳", "country_id": "10", "country_code": "84", "maxPrice": "0.25", "minPrice": 0.15},
     "philipina": {"name": "Philipina", "flag": "🇵🇭", "country_id": "3", "country_code": "63", "maxPrice": "0.25", "minPrice": 0.15},
-    "colombia": {"name": "Colombia", "flag": "🇨🇴", "country_id": "33", "country_code": "57", "maxPrice": "0.50"},
-    "mexico": {"name": "Mexico", "flag": "🇲🇽", "country_id": "54", "country_code": "52", "maxPrice": "0.50"},
+    "colombia": {"name": "Colombia", "flag": "🇨🇴", "country_id": "33", "country_code": "57"},
+    "mexico": {"name": "Mexico", "flag": "🇲🇽", "country_id": "54", "country_code": "52"},
     "brazil": {"name": "Brazil", "flag": "🇧🇷", "country_id": "73", "country_code": "55", "maxPrice": "1.50"},
 }
 

@@ -102,7 +102,7 @@ def req_api(api_key, action, **kwargs):
     except Exception as e: return f"ERROR: {str(e)}"
 
 def fetch_price(api_key, country_key):
-    """Ambil harga nomor dari API"""
+    """Ambil harga nomor YANG TERSEDIA dari API (filter stok 0)"""
     try:
         cid = COUNTRIES[country_key]['country_id']
         res_p = req_api(api_key, 'getPrices', service=SERVICE, country=cid)
@@ -112,9 +112,25 @@ def fetch_price(api_key, country_key):
             if inn:
                 if 'cost' in inn:
                     return float(inn['cost'])
+                # Filter hanya harga yang stoknya > 0
+                available = []
+                for k, v in inn.items():
+                    if not k.replace('.','').isdigit():
+                        continue
+                    price = float(k)
+                    # v bisa berupa dict {"count": N} atau langsung angka count
+                    if isinstance(v, dict):
+                        cnt = v.get('count', 0)
+                    else:
+                        cnt = int(v) if str(v).isdigit() else 0
+                    if cnt > 0:
+                        available.append(price)
+                if available:
+                    return min(available)  # Termurah yang MASIH ADA stok
+                # Kalau semua stok 0, return harga tertinggi sebagai referensi
                 numeric_keys = [float(k) for k in inn.keys() if k.replace('.','').isdigit()]
                 if numeric_keys:
-                    return min(numeric_keys)
+                    return max(numeric_keys)
     except:
         pass
     return None

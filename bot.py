@@ -251,8 +251,13 @@ def autobuy_worker(chat_id, api_key, country_key):
             if st_msg and (now - last_ui > 5):
                 el = int(now - st_time)
                 speed = att / max(el, 1)
-                try: bot.edit_message_text(f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\n⚡ Mode: ULTRA BRUTAL\n💰 MaxPrice: `{cntry.get('maxPrice','N/A')}` USD\n🔄 Percobaan: `{att}`x ({speed:.1f}/detik)\n🎯 Dapat: `{len(orders_list)}` nomor\n⏱ Waktu: {el//60}m {el%60}s\n📡 Status: {'🟢 Hunting...' if no_number_streak < 10 else '🟡 Menunggu stok...'}", chat_id, st_msg.message_id, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto"))); last_ui = now
-                except: pass
+                try: 
+                    bot.edit_message_text(f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\n⚡ Mode: ULTRA BRUTAL\n💰 MaxPrice: `{cntry.get('maxPrice','N/A')}` USD\n🔄 Percobaan: `{att}`x ({speed:.1f}/detik)\n🎯 Dapat: `{len(orders_list)}` nomor\n⏱ Waktu: {el//60}m {el%60}s\n📡 Status: {'🟢 Hunting...' if no_number_streak < 10 else '🟡 Menunggu stok...'}", chat_id, st_msg.message_id, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto")))
+                    last_ui = now
+                except Exception as e:
+                    if "Too Many Requests" in str(e):
+                        time.sleep(1) # Backoff
+                    pass
             # === BRUTAL REQUEST WITH maxPrice ===
             kwargs = {'service': SERVICE, 'country': cntry['country_id']}
             if 'maxPrice' in cntry:
@@ -284,12 +289,20 @@ def autobuy_worker(chat_id, api_key, country_key):
                 no_number_streak += 1
                 # Brutal: jeda sangat pendek, langsung retry
                 if no_number_streak > 50:
-                    time.sleep(0.15)  # Sedikit lebih lama kalau sudah lama kosong
+                    time.sleep(0.5)  # Sedikit lebih lama kalau sudah lama kosong
+                    if no_number_streak % 10 == 0:
+                        try:
+                            bot.edit_message_text(f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\n⚡ Mode: ULTRA BRUTAL\n💰 MaxPrice: `{cntry.get('maxPrice','N/A')}` USD\n🔄 Percobaan: `{att}`x\n🎯 Dapat: `{len(orders_list)}` nomor\n⏱ Status: 🟡 Menunggu stok... ({no_number_streak}x kosong)", chat_id, st_msg.message_id, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto")))
+                        except Exception as e:
+                            if "Too Many Requests" in str(e): time.sleep(1)
+                            pass
                 else:
                     time.sleep(0.05)  # Ultra cepat retry
+            elif 'ERROR' in res or 'ERR_HTTP' in res or res == '':
+                time.sleep(1.0) # Error koneksi, jeda lebih lama supaya API pull napas
             else:
                 no_number_streak = 0
-                time.sleep(0.1)  # Error lain, retry cepat
+                time.sleep(0.3)  # Error lain, retry menengah
     except Exception as ex:
         print(f"[AUTOBUY ERROR] {country_key}: {ex}")
         try: bot.send_message(chat_id, f"❌ *Auto Buy Error:* `{str(ex)}`", parse_mode="Markdown")

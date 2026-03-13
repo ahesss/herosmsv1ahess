@@ -244,27 +244,30 @@ def autobuy_worker(chat_id, api_key, country_key):
     att, count, orders_list = 0, 0, []
     st_time, last_ui = time.time(), time.time()
     no_number_streak = 0
-    try:
-        while autobuy_active.get(chat_id) == country_key:
+    err_streak = 0
+    last_ui_status = "🟢 Hunting..."
+    
+    while autobuy_active.get(chat_id) == country_key:
+        try:
             att += 1; now = time.time()
-            # Update UI setiap 5 detik (aman dari Telegram rate limit)
-            if st_msg and (now - last_ui > 5):
+            if st_msg and (now - last_ui > 4):
                 el = int(now - st_time)
                 speed = att / max(el, 1)
                 try: 
-                    bot.edit_message_text(f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\n⚡ Mode: ULTRA BRUTAL\n💰 MaxPrice: `{cntry.get('maxPrice','N/A')}` USD\n🔄 Percobaan: `{att}`x ({speed:.1f}/detik)\n🎯 Dapat: `{len(orders_list)}` nomor\n⏱ Waktu: {el//60}m {el%60}s\n📡 Status: {'🟢 Hunting...' if no_number_streak < 10 else '🟡 Menunggu stok...'}", chat_id, st_msg.message_id, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto")))
+                    bot.edit_message_text(f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\n⚡ Mode: ULTRA BRUTAL\n💰 MaxPrice: `{cntry.get('maxPrice','N/A')}` USD\n🔄 Percobaan: `{att}`x ({speed:.1f}/detik)\n🎯 Dapat: `{len(orders_list)}` nomor\n⏱ Waktu: {el//60}m {el%60}s\n📡 Status: {last_ui_status}", chat_id, st_msg.message_id, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto")))
                     last_ui = now
                 except Exception as e:
-                    if "Too Many Requests" in str(e):
-                        time.sleep(1) # Backoff
+                    if "Too Many Requests" in str(e): time.sleep(1.5)
                     pass
-            # === BRUTAL REQUEST WITH maxPrice ===
+                    
             kwargs = {'service': SERVICE, 'country': cntry['country_id']}
-            if 'maxPrice' in cntry:
-                kwargs['maxPrice'] = cntry['maxPrice']
+            if 'maxPrice' in cntry: kwargs['maxPrice'] = cntry['maxPrice']
             res = req_api(api_key, 'getNumber', **kwargs)
+            
             if 'ACCESS_NUMBER' in res:
                 no_number_streak = 0
+                err_streak = 0
+                last_ui_status = "🟢 Dapat Nomor! Hunting lagi..."
                 parts = res.split(':')
                 if len(parts) >= 3:
                     act_id = parts[1]; number = parts[2]
@@ -274,8 +277,9 @@ def autobuy_worker(chat_id, api_key, country_key):
                 pr = fetch_price_by_activation(api_key, act_id) or fetch_price(api_key, country_key)
                 min_pr = cntry.get('minPrice')
                 if min_pr and pr and pr < min_pr:
+                    last_ui_status = f"🟡 Skip nomor murahan (${pr})"
                     req_api(api_key, 'setStatus', status='8', id=act_id)
-                    time.sleep(0.2)
+                    time.sleep(0.05)
                     continue
 
                 count += 1
@@ -294,40 +298,46 @@ def autobuy_worker(chat_id, api_key, country_key):
                 if success_send:
                     threading.Thread(target=auto_check_otp, args=(chat_id, m.message_id, [o], api_key, country_key, True, count), daemon=True).start()
                 else:
-                    # Gagal kirim pesan UI, batalkan pesanan di server daripada nyangkut!
                     req_api(api_key, 'setStatus', status='8', id=act_id)
                     orders_list.remove(o)
                     
-                # Jeda minimal setelah dapat nomor agar tidak double charge
                 time.sleep(0.5)
+                
             elif res == 'NO_BALANCE':
                 try: bot.send_message(chat_id, "💸 *SALDO HABIS!* Auto buy dihentikan.", parse_mode="Markdown")
                 except: pass
                 break
+                
             elif res == 'NO_NUMBERS':
                 no_number_streak += 1
-                # Brutal: jeda sangat pendek, langsung retry
+                err_streak = 0
                 if no_number_streak > 50:
-                    time.sleep(0.5)  # Sedikit lebih lama kalau sudah lama kosong
-                    if no_number_streak % 10 == 0:
-                        try:
-                            bot.edit_message_text(f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\n⚡ Mode: ULTRA BRUTAL\n💰 MaxPrice: `{cntry.get('maxPrice','N/A')}` USD\n🔄 Percobaan: `{att}`x\n🎯 Dapat: `{len(orders_list)}` nomor\n⏱ Status: 🟡 Menunggu stok... ({no_number_streak}x kosong)", chat_id, st_msg.message_id, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto")))
-                        except Exception as e:
-                            if "Too Many Requests" in str(e): time.sleep(1)
-                            pass
+                    last_ui_status = f"🟡 Menunggu stok... ({no_number_streak}x kosong)"
+                    time.sleep(0.5)
                 else:
-                    time.sleep(0.05)  # Ultra cepat retry
-            elif 'ERROR' in res or 'ERR_HTTP' in res or res == '':
-                time.sleep(1.0) # Error koneksi, jeda lebih lama supaya API pull napas
+                    last_ui_status = "🟢 Hunting..."
+                    time.sleep(0.05)
+                    
             else:
-                no_number_streak = 0
-                time.sleep(0.3)  # Error lain, retry menengah
-    except Exception as ex:
-        print(f"[AUTOBUY ERROR] {country_key}: {ex}")
-        try: bot.send_message(chat_id, f"❌ *Auto Buy Error:* `{str(ex)}`", parse_mode="Markdown")
-        except: pass
-    finally:
-        autobuy_active[chat_id] = False
+                err_streak += 1
+                if 'ERROR' in res or 'ERR_HTTP' in res or not res:
+                    last_ui_status = "🔴 API Error Koneksi, Jeda sejenak..."
+                    time.sleep(1.0)
+                else:
+                    clean_res = res[:25].replace('\n', ' ')
+                    last_ui_status = f"🔴 Aneh: {clean_res}"
+                    time.sleep(1.0)
+                
+                if "BANNED" in res and err_streak > 3:
+                    try: bot.send_message(chat_id, f"❌ *IP BANNED by HeroSMS!* Mode Brutal dihentikan sementera.", parse_mode="Markdown")
+                    except: pass
+                    break
+
+        except Exception as ex:
+            print(f"[AUTOBUY INNER ERROR] {ex}")
+            time.sleep(1.0)
+
+    autobuy_active[chat_id] = False
     if st_msg:
         el = int(time.time() - st_time)
         try: bot.edit_message_text(f"🛑 *AUTO BUY SELESAI*\n\n🎯 Total dapat: `{len(orders_list)}` nomor\n🔄 Total percobaan: `{att}`x\n⏱ Durasi: {el//60}m {el%60}s", chat_id, st_msg.message_id, parse_mode="Markdown")

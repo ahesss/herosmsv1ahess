@@ -272,13 +272,32 @@ def autobuy_worker(chat_id, api_key, country_key):
                     time.sleep(0.1)
                     continue
                 pr = fetch_price_by_activation(api_key, act_id) or fetch_price(api_key, country_key)
+                min_pr = cntry.get('minPrice')
+                if min_pr and pr and pr < min_pr:
+                    req_api(api_key, 'setStatus', status='8', id=act_id)
+                    time.sleep(0.2)
+                    continue
+
                 count += 1
                 o = {'id': act_id, 'number': number, 'status': 'waiting', 'order_time': time.time(), 'price': pr}
                 orders_list.append(o)
-                try:
-                    m = bot.send_message(chat_id, format_order_message([o], "", country_key, count, False), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("⏳ Wait...", callback_data="cancel_wait")))
+                success_send = False
+                for _ in range(5):
+                    try:
+                        m = bot.send_message(chat_id, format_order_message([o], "", country_key, count, False), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("⏳ Wait...", callback_data="cancel_wait")))
+                        success_send = True
+                        break
+                    except Exception as e:
+                        if "Too Many Requests" in str(e): time.sleep(1.5)
+                        else: time.sleep(1)
+                
+                if success_send:
                     threading.Thread(target=auto_check_otp, args=(chat_id, m.message_id, [o], api_key, country_key, True, count), daemon=True).start()
-                except: pass
+                else:
+                    # Gagal kirim pesan UI, batalkan pesanan di server daripada nyangkut!
+                    req_api(api_key, 'setStatus', status='8', id=act_id)
+                    orders_list.remove(o)
+                    
                 # Jeda minimal setelah dapat nomor agar tidak double charge
                 time.sleep(0.5)
             elif res == 'NO_BALANCE':

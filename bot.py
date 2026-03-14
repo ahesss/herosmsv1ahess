@@ -45,6 +45,7 @@ COUNTRIES = {
 
 active_orders = {}
 autobuy_active = {} 
+price_cache = {}  # {country_key: (price, timestamp)}
 
 # =============================================
 # DATABASE
@@ -126,7 +127,13 @@ def fetch_price_by_activation(api_key, activation_id):
     return None
 
 def fetch_price(api_key, country_key):
-    """Fallback: ambil harga dari getPrices (hanya dipakai kalau activation lookup gagal)"""
+    """Ambil harga dengan cache agar lebih cepat dan tidak menghambat loop"""
+    now = time.time()
+    if country_key in price_cache:
+        val, ts = price_cache[country_key]
+        if now - ts < 60: # Cache 60 detik
+            return val
+            
     try:
         cid = COUNTRIES[country_key]['country_id']
         res_p = req_api(api_key, 'getPrices', service=SERVICE, country=cid)
@@ -134,14 +141,20 @@ def fetch_price(api_key, country_key):
             d = json.loads(res_p)
             inn = d.get(cid, {}).get(SERVICE) or d.get(SERVICE, {}).get(cid)
             if inn:
+                price = None
                 if 'cost' in inn:
-                    return float(inn['cost'])
-                numeric_keys = [float(k) for k in inn.keys() if k.replace('.','').isdigit()]
-                if numeric_keys:
-                    return max(numeric_keys)
+                    price = float(inn['cost'])
+                else:
+                    numeric_keys = [float(k) for k in inn.keys() if k.replace('.','').isdigit()]
+                    if numeric_keys:
+                        price = max(numeric_keys)
+                
+                if price:
+                    price_cache[country_key] = (price, now)
+                    return price
     except:
         pass
-    return None
+    return price_cache.get(country_key, (None, 0))[0]
 
 def strip_country_code(number, country_code="84"):
     number = str(number).strip()
@@ -239,7 +252,7 @@ def auto_check_otp(chat_id, message_id, orders, api_key, country_key="vietnam", 
 def autobuy_worker(chat_id, api_key, country_key):
     cntry = COUNTRIES[country_key]
     try:
-        st_msg = bot.send_message(chat_id, f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\nMode: ⚡ ULTRA BRUTAL (MaxPrice: {cntry.get('maxPrice','N/A')})\n🔄 Percobaan: 0", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto")))
+        st_msg = bot.send_message(chat_id, f"🚀 *SUPER BRUTAL AUTO BUY {country_key.upper()}*\n\nMode: ⚡ ULTRA BRUTAL\n🔄 Percobaan: 0", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("🛑 STOP", callback_data="nav_stopauto")))
     except: st_msg = None
     att, count, orders_list = 0, 0, []
     st_time, last_ui = time.time(), time.time()
@@ -247,6 +260,9 @@ def autobuy_worker(chat_id, api_key, country_key):
     err_streak = 0
     last_ui_status = "🟢 Hunting..."
     
+    # Pre-fetch price to avoid latency inside loop
+    fetch_price(api_key, country_key)
+
     while autobuy_active.get(chat_id) == country_key:
         try:
             att += 1; now = time.time()
@@ -259,9 +275,11 @@ def autobuy_worker(chat_id, api_key, country_key):
                 except Exception as e:
                     if "Too Many Requests" in str(e): time.sleep(1.5)
                     pass
-                    
+            
             kwargs = {'service': SERVICE, 'country': cntry['country_id']}
             if 'maxPrice' in cntry: kwargs['maxPrice'] = cntry['maxPrice']
+            
+            # API Call
             res = req_api(api_key, 'getNumber', **kwargs)
             
             if 'ACCESS_NUMBER' in res:
@@ -272,36 +290,40 @@ def autobuy_worker(chat_id, api_key, country_key):
                 if len(parts) >= 3:
                     act_id = parts[1]; number = parts[2]
                 else:
-                    time.sleep(0.1)
                     continue
+                
+                # Gunakan cache price jika ada
                 pr = fetch_price_by_activation(api_key, act_id) or fetch_price(api_key, country_key)
+                
                 min_pr = cntry.get('minPrice')
                 if min_pr and pr and pr < min_pr:
-                    last_ui_status = f"🟡 Skip nomor murahan (${pr})"
+                    last_ui_status = f"🟡 Skip nomor murah (${pr})"
                     req_api(api_key, 'setStatus', status='8', id=act_id)
-                    time.sleep(0.05)
                     continue
 
                 count += 1
                 o = {'id': act_id, 'number': number, 'status': 'waiting', 'order_time': time.time(), 'price': pr}
                 orders_list.append(o)
+                
+                # Tampilkan pesan nomor baru dengan retry
                 success_send = False
-                for _ in range(5):
+                for send_att in range(3):
                     try:
                         m = bot.send_message(chat_id, format_order_message([o], "", country_key, count, False), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup().row(InlineKeyboardButton("⏳ Wait...", callback_data="cancel_wait")))
                         success_send = True
                         break
                     except Exception as e:
-                        if "Too Many Requests" in str(e): time.sleep(1.5)
-                        else: time.sleep(1)
+                        if "Too Many Requests" in str(e): time.sleep(2)
+                        else: time.sleep(0.5)
                 
                 if success_send:
                     threading.Thread(target=auto_check_otp, args=(chat_id, m.message_id, [o], api_key, country_key, True, count), daemon=True).start()
                 else:
+                    # Jika gagal kirim pesan ke Telegram, batalkan saja nomornya agar saldo tidak terpotong sia-sia
                     req_api(api_key, 'setStatus', status='8', id=act_id)
                     orders_list.remove(o)
                     
-                time.sleep(0.1)
+                time.sleep(0.05)
                 
             elif res == 'NO_BALANCE':
                 try: bot.send_message(chat_id, "💸 *SALDO HABIS!* Auto buy dihentikan.", parse_mode="Markdown")
@@ -311,31 +333,37 @@ def autobuy_worker(chat_id, api_key, country_key):
             elif res == 'NO_NUMBERS':
                 no_number_streak += 1
                 err_streak = 0
-                if no_number_streak > 50:
+                if no_number_streak > 30:
                     last_ui_status = f"🟡 Menunggu stok... ({no_number_streak}x kosong)"
-                    time.sleep(0.5)
+                    time.sleep(0.3)
                 else:
                     last_ui_status = "🟢 Hunting..."
-                    time.sleep(0.01) # Reduced from 0.05s for faster retries
+                    time.sleep(0.05)
                     
             else:
                 err_streak += 1
                 if 'ERROR' in res or 'ERR_HTTP' in res or not res:
-                    last_ui_status = "🔴 API Error Koneksi, Jeda sejenak..."
+                    last_ui_status = f"🔴 API Error ({err_streak}), Jeda sejenak..."
                     time.sleep(1.0)
                 else:
                     clean_res = res[:25].replace('\n', ' ')
-                    last_ui_status = f"🔴 Aneh: {clean_res}"
-                    time.sleep(1.0)
+                    last_ui_status = f"🔴 Respon: {clean_res}"
+                    time.sleep(0.5)
                 
-                if "BANNED" in res and err_streak > 3:
-                    try: bot.send_message(chat_id, f"❌ *IP BANNED by HeroSMS!* Mode Brutal dihentikan sementera.", parse_mode="Markdown")
+                if "BANNED" in res and err_streak > 2:
+                    try: bot.send_message(chat_id, f"❌ *IP BANNED!* Brutal dihentikan.", parse_mode="Markdown")
                     except: pass
                     break
 
         except Exception as ex:
-            print(f"[AUTOBUY INNER ERROR] {ex}")
-            time.sleep(1.0)
+            print(f"[AUTOBUY ERROR] {ex}")
+            time.sleep(1)
+
+    autobuy_active[chat_id] = False
+    if st_msg:
+        el = int(time.time() - st_time)
+        try: bot.edit_message_text(f"🛑 *AUTO BUY SELESAI*\n\n🎯 Total dapat: `{len(orders_list)}` nomor\n🔄 Total percobaan: `{att}`x\n⏱ Durasi: {el//60}m {el%60}s", chat_id, st_msg.message_id, parse_mode="Markdown")
+        except: pass
 
     autobuy_active[chat_id] = False
     if st_msg:

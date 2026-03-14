@@ -301,7 +301,7 @@ def autobuy_worker(chat_id, api_key, country_key):
                     req_api(api_key, 'setStatus', status='8', id=act_id)
                     orders_list.remove(o)
                     
-                time.sleep(0.5)
+                time.sleep(0.1)
                 
             elif res == 'NO_BALANCE':
                 try: bot.send_message(chat_id, "💸 *SALDO HABIS!* Auto buy dihentikan.", parse_mode="Markdown")
@@ -316,7 +316,7 @@ def autobuy_worker(chat_id, api_key, country_key):
                     time.sleep(0.5)
                 else:
                     last_ui_status = "🟢 Hunting..."
-                    time.sleep(0.05)
+                    time.sleep(0.01) # Reduced from 0.05s for faster retries
                     
             else:
                 err_streak += 1

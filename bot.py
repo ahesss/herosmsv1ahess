@@ -436,6 +436,22 @@ def removeuser_cmd(message):
     remove_from_whitelist(target_id)
     bot.reply_to(message, f"✅ User `{target_id}` dihapus dari whitelist.", parse_mode="Markdown")
 
+@bot.message_handler(commands=['clearusers'])
+def clearusers_cmd(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "🚫 Hanya admin.")
+        return
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM whitelist WHERE user_id != ?", (ADMIN_ID,))
+    deleted = c.rowcount
+    c.execute("DELETE FROM users WHERE user_id != ?", (ADMIN_ID,))
+    c.execute("DELETE FROM user_info WHERE user_id != ?", (ADMIN_ID,))
+    c.execute("DELETE FROM activity_log")
+    conn.commit()
+    conn.close()
+    bot.reply_to(message, f"✅ Berhasil menghapus *{deleted}* user dari whitelist server beserta data info dan API mereka.\n(Admin tetap aman).", parse_mode="Markdown")
+
 @bot.message_handler(commands=['listusers'])
 def listusers_cmd(message):
     if message.from_user.id != ADMIN_ID:
